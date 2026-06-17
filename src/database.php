@@ -59,19 +59,25 @@ function support_chat_migrate(PDO $pdo): void
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at DESC)');
 }
 
-function support_chat_touch_conversation(PDO $pdo, int $id): void
+function support_chat_get_conversation(PDO $pdo, int $id): ?array
 {
-    $stmt = $pdo->prepare('UPDATE conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+    $stmt = $pdo->prepare('SELECT * FROM conversations WHERE id = ? LIMIT 1');
     $stmt->execute([$id]);
+    $conversation = $stmt->fetch();
+    return is_array($conversation) ? $conversation : null;
 }
 
 function support_chat_add_message(PDO $pdo, int $conversationId, string $sender, string $body, ?string $telegramMessageId = null): int
 {
+    if (!support_chat_get_conversation($pdo, $conversationId)) {
+        throw new InvalidArgumentException('Conversation not found');
+    }
+
     $body = trim($body);
     if ($body === '') {
         throw new InvalidArgumentException('Message is empty');
     }
-    if (mb_strlen($body) > 4000) {
+    if (strlen($body) > 12000) {
         throw new InvalidArgumentException('Message is too long');
     }
 
@@ -100,8 +106,8 @@ function support_chat_find_or_create_web_conversation(PDO $pdo, string $sessionI
         return (int)$id;
     }
 
-    $stmt = $pdo->prepare("INSERT INTO conversations (channel, external_id, visitor_name) VALUES ('web', ?, 'Посетитель сайта')");
-    $stmt->execute([$sessionId]);
+    $stmt = $pdo->prepare("INSERT INTO conversations (channel, external_id, visitor_name) VALUES ('web', ?, ?)");
+    $stmt->execute([$sessionId, 'Посетитель сайта']);
     return (int)$pdo->lastInsertId();
 }
 

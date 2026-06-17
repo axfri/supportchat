@@ -19,7 +19,7 @@ function support_chat_load_env(): array
     if (is_file($file)) {
         foreach (file($file, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES) as $line) {
             $line = trim($line);
-            if ($line === '' || str_starts_with($line, '#') || !str_contains($line, '=')) {
+            if ($line === '' || strpos($line, '#') === 0 || strpos($line, '=') === false) {
                 continue;
             }
             [$key, $value] = explode('=', $line, 2);
@@ -45,7 +45,7 @@ function support_chat_env(string $key, string $default = ''): string
 function support_chat_sqlite_path(): string
 {
     $path = support_chat_env('SQLITE_PATH', 'storage/support.sqlite');
-    if (preg_match('/^[A-Za-z]:[\\\\\\/]/', $path) || str_starts_with($path, '/')) {
+    if (preg_match('/^[A-Za-z]:[\\\\\\/]/', $path) || strpos($path, '/') === 0) {
         return $path;
     }
     return support_chat_base_path($path);
