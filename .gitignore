@@ -1,5 +1,7 @@
 .env
 storage/*.sqlite
 storage/*.sqlite-*
+storage/*.json
 storage/*.log
+storage/telegram_offset.txt
 !storage/.gitkeep
