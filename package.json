@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "start": "node local-server.js"
+    "start": "node local-server.js",
+    "start:telegram": "node local-server.js --telegram-polling"
   },
   "engines": {
     "node": ">=18"

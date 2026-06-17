@@ -18,6 +18,14 @@ npm start
 - страница клиента: `http://localhost:8080/support.php`
 - ключ доступа по умолчанию: `admin`
 
+Локальный запуск с приемом сообщений из Telegram через polling:
+
+```bash
+npm run start:telegram
+```
+
+Для этого в `.env` должен быть указан `TELEGRAM_BOT_TOKEN`.
+
 Чтобы изменить порт:
 
 ```bash
@@ -47,7 +55,15 @@ TELEGRAM_WEBHOOK_SECRET=change-me-webhook-secret
 
 ## Проверка Telegram локально
 
-Telegram webhook требует публичный HTTPS-адрес. Для локальной проверки можно отправить тестовый webhook-запрос вручную:
+Вариант 1: реальный бот через polling.
+
+1. Создайте `.env`.
+2. Добавьте `TELEGRAM_BOT_TOKEN`.
+3. Запустите `npm run start:telegram`.
+4. Напишите сообщение боту в Telegram.
+5. Откройте панель поддержки: появится диалог с меткой `Telegram`.
+
+Вариант 2: тестовый webhook-запрос без реального Telegram.
 
 ```bash
 Invoke-RestMethod -Method Post http://localhost:8080/telegram-webhook.php `
@@ -70,17 +86,3 @@ Invoke-RestMethod -Method Post http://localhost:8080/telegram-webhook.php `
 
 Важно: токен бота не храните в Git. Если токен был опубликован в переписке или логах, перевыпустите его через BotFather.
 
-## Подключение Telegram на сервере
-
-Webhook:
-
-```bash
-curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
-  -d "url=$APP_URL/telegram-webhook.php?secret=$TELEGRAM_WEBHOOK_SECRET"
-```
-
-Если webhook недоступен, можно запустить polling:
-
-```bash
-php bin/telegram-poll.php
-```

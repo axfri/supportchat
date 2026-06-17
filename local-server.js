@@ -7,11 +7,16 @@ const rootDir = __dirname;
 const publicDir = path.join(rootDir, 'public');
 const storageDir = path.join(rootDir, 'storage');
 const dataFile = path.join(storageDir, 'local-data.json');
+const offsetFile = path.join(storageDir, 'telegram-local-offset.txt');
 const port = Number(process.env.PORT || 8080);
 
 const env = loadEnv();
 const adminToken = env.SUPPORT_ADMIN_TOKEN || 'admin';
 const telegramToken = env.TELEGRAM_BOT_TOKEN || '';
+const telegramPolling = process.argv.includes('--telegram-polling') || env.TELEGRAM_POLLING === '1';
+
+const WEB_VISITOR_NAME = '\u041f\u043e\u0441\u0435\u0442\u0438\u0442\u0435\u043b\u044c \u0441\u0430\u0439\u0442\u0430';
+const NON_TEXT_MESSAGE = '[\u043d\u0435 \u0442\u0435\u043a\u0441\u0442\u043e\u0432\u043e\u0435 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435]';
 
 fs.mkdirSync(storageDir, { recursive: true });
 
@@ -113,7 +118,7 @@ function findOrCreateWebConversation(data, sid) {
     id: data.nextConversationId++,
     channel: 'web',
     external_id: sid,
-    visitor_name: 'Посетитель сайта',
+    visitor_name: WEB_VISITOR_NAME,
     visitor_handle: '',
     status: 'open',
     unread_support: 0,
@@ -172,22 +177,90 @@ function addMessage(data, conversation, sender, body, telegramMessageId = '') {
   return item;
 }
 
+function ingestTelegramMessage(data, message) {
+  const chat = message.chat || {};
+  if (!chat.id) return false;
+
+  const name = `${chat.first_name || ''} ${chat.last_name || ''}`.trim() || 'Telegram user';
+  const handle = chat.username ? `@${chat.username}` : '';
+  const conversation = findOrCreateTelegramConversation(data, String(chat.id), name, handle);
+  addMessage(data, conversation, 'visitor', message.text || NON_TEXT_MESSAGE, String(message.message_id || ''));
+  return true;
+}
+
 async function sendTelegram(chatId, body) {
   if (!telegramToken) return;
-  const endpoint = `https://api.telegram.org/bot${telegramToken}/sendMessage`;
   try {
-    await fetch(endpoint, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: new URLSearchParams({
-        chat_id: chatId,
-        text: body,
-        disable_web_page_preview: 'true',
-      }),
+    await telegramRequest('sendMessage', {
+      chat_id: chatId,
+      text: body,
+      disable_web_page_preview: 'true',
     });
   } catch {
     // Local server keeps working even when Telegram is unavailable.
   }
+}
+
+async function telegramRequest(method, payload = {}) {
+  if (!telegramToken) {
+    throw new Error('TELEGRAM_BOT_TOKEN is not configured');
+  }
+
+  const endpoint = `https://api.telegram.org/bot${telegramToken}/${method}`;
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(payload),
+  });
+  return response.json();
+}
+
+async function pollTelegramOnce() {
+  const offset = fs.existsSync(offsetFile) ? Number(fs.readFileSync(offsetFile, 'utf8').trim() || 0) : 0;
+  const result = await telegramRequest('getUpdates', {
+    offset: String(offset),
+    timeout: '25',
+    allowed_updates: JSON.stringify(['message']),
+  });
+
+  if (!result.ok || !Array.isArray(result.result)) {
+    throw new Error(result.description || 'Telegram polling failed');
+  }
+
+  let nextOffset = offset;
+  const data = readData();
+  let changed = false;
+
+  for (const update of result.result) {
+    nextOffset = Math.max(nextOffset, Number(update.update_id || 0) + 1);
+    if (update.message && ingestTelegramMessage(data, update.message)) {
+      changed = true;
+    }
+  }
+
+  fs.writeFileSync(offsetFile, String(nextOffset), 'utf8');
+  if (changed) writeData(data);
+}
+
+function startTelegramPolling() {
+  if (!telegramToken) {
+    console.log('Telegram polling skipped: TELEGRAM_BOT_TOKEN is not configured');
+    return;
+  }
+
+  console.log('Telegram polling enabled');
+
+  const loop = async () => {
+    try {
+      await pollTelegramOnce();
+    } catch (error) {
+      console.log(`Telegram polling error: ${error.message}`);
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
+    setImmediate(loop);
+  };
+
+  loop();
 }
 
 async function handleApi(req, res, url) {
@@ -280,18 +353,7 @@ async function handleApi(req, res, url) {
 
   if (url.pathname === '/telegram-webhook.php' && req.method === 'POST') {
     const update = await readBody(req);
-    const message = update.message || {};
-    const chat = message.chat || {};
-    if (!chat.id) {
-      json(res, 200, { ok: true });
-      return;
-    }
-
-    const name = `${chat.first_name || ''} ${chat.last_name || ''}`.trim() || 'Telegram user';
-    const handle = chat.username ? `@${chat.username}` : '';
-    const conversation = findOrCreateTelegramConversation(data, String(chat.id), name, handle);
-    addMessage(data, conversation, 'visitor', message.text || '[не текстовое сообщение]', String(message.message_id || ''));
-    writeData(data);
+    if (ingestTelegramMessage(data, update.message || {})) writeData(data);
     json(res, 200, { ok: true });
     return;
   }
@@ -348,4 +410,5 @@ server.listen(port, () => {
   console.log(`Admin panel: http://localhost:${port}/index.php`);
   console.log(`Client page: http://localhost:${port}/support.php`);
   console.log(`Admin token: ${adminToken}`);
+  if (telegramPolling) startTelegramPolling();
 });

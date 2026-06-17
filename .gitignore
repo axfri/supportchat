@@ -4,4 +4,5 @@ storage/*.sqlite-*
 storage/*.json
 storage/*.log
 storage/telegram_offset.txt
+storage/telegram-local-offset.txt
 !storage/.gitkeep
