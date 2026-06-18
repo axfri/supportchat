@@ -15,6 +15,7 @@
     let conversations = [];
     let selectedId = null;
     let messageSignature = '';
+    let sending = false;
 
     tokenInput.value = token;
 
@@ -61,14 +62,15 @@
             const unread = Number(item.unread_support || 0);
             const name = item.visitor_name || item.visitor_handle || 'Клиент';
             const last = item.last_message || 'Нет сообщений';
+            const time = item.last_message_at || item.updated_at || '';
             return `
                 <button class="conversation${active}" data-id="${item.id}" type="button">
                     <span>
                         <strong>${escapeHtml(name)}</strong>
-                        <small>${escapeHtml(item.visitor_handle || item.updated_at || '')}</small>
+                        <small>${escapeHtml(item.visitor_handle || time || '')}</small>
                     </span>
                     <span class="badge ${item.channel}">${channelText(item.channel)}</span>
-                    <span class="last">${escapeHtml(last)}</span>
+                    <span class="last">${escapeHtml(last.length > 80 ? last.slice(0, 77) + '...' : last)}</span>
                     ${unread > 0 ? `<span class="badge unread">${unread}</span>` : ''}
                 </button>
             `;

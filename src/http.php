@@ -11,10 +11,35 @@ function support_chat_json(array $payload, int $status = 200): void
     exit;
 }
 
+function support_chat_log_error(string $message): void
+{
+    $file = support_chat_base_path('storage' . DIRECTORY_SEPARATOR . 'error.log');
+    $dir = dirname($file);
+    if (!is_dir($dir)) {
+        @mkdir($dir, 0775, true);
+    }
+    $entry = '[' . date('c') . '] ' . $message . "\n";
+    @file_put_contents($file, $entry, FILE_APPEND | LOCK_EX);
+}
+
+function support_chat_error(string $message, int $status = 500): void
+{
+    support_chat_log_error($message);
+    support_chat_json(['ok' => false, 'error' => $message], $status);
+}
+
 function support_chat_input(): array
 {
     $raw = file_get_contents('php://input') ?: '';
+    // Try to decode JSON; if invalid, return empty array (handlers should validate required fields)
     $data = json_decode($raw, true);
+    if (json_last_error() !== JSON_ERROR_NONE) {
+        // Log malformed JSON for debugging
+        if ($raw !== '') {
+            support_chat_log_error('Malformed JSON input: ' . $raw);
+        }
+        return [];
+    }
     return is_array($data) ? $data : [];
 }
 
@@ -22,7 +47,7 @@ function support_chat_require_admin(): void
 {
     $expected = support_chat_env('SUPPORT_ADMIN_TOKEN');
     if ($expected === '') {
-        support_chat_json(['ok' => false, 'error' => 'Admin token is not configured'], 500);
+        support_chat_error('Admin token is not configured', 500);
     }
 
     $header = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
@@ -33,7 +58,7 @@ function support_chat_require_admin(): void
         $token = (string)$_GET['admin_token'];
     }
 
-    if (!hash_equals($expected, $token)) {
+    if (!is_string($token) || !hash_equals($expected, $token)) {
         support_chat_json(['ok' => false, 'error' => 'Unauthorized'], 401);
     }
 }
