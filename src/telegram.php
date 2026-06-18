@@ -22,9 +22,26 @@ function support_chat_telegram_request(string $method, array $payload): array
         ],
     ]);
 
-    $response = file_get_contents($url, false, $context);
+    $response = @file_get_contents($url, false, $context);
+
+    // Try to get HTTP status from response headers if available
+    $httpStatus = null;
+    if (isset($http_response_header) && is_array($http_response_header) && count($http_response_header) > 0) {
+        if (preg_match('#HTTP/\d(?:\.\d)?\s+(\d{3})#', $http_response_header[0], $m)) {
+            $httpStatus = (int)$m[1];
+        }
+    }
+
     $decoded = is_string($response) ? json_decode($response, true) : null;
-    return is_array($decoded) ? $decoded : ['ok' => false, 'description' => 'Bad Telegram response'];
+    if (!is_array($decoded)) {
+        $result = ['ok' => false, 'description' => 'Bad Telegram response'];
+        if ($httpStatus !== null) {
+            $result['http_status'] = $httpStatus;
+        }
+        return $result;
+    }
+
+    return $decoded;
 }
 
 function support_chat_telegram_send(string $chatId, string $text): array

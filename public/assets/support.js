@@ -3,8 +3,10 @@
     const composer = document.getElementById('composer');
     const messageInput = document.getElementById('messageInput');
     const status = document.getElementById('status');
+    const sendButton = composer.querySelector('button');
 
     let messageSignature = '';
+    let sending = false;
 
     function escapeHtml(value) {
         return String(value)
@@ -51,28 +53,39 @@
             });
     }
 
+    async function sendMessage(body) {
+        if (sending) return;
+        sending = true;
+        sendButton.disabled = true;
+        messageInput.disabled = true;
+        try {
+            const res = await fetch('api/messages.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ body }),
+            });
+            const data = await res.json();
+            if (!data.ok) {
+                throw new Error(data.error || 'Ошибка отправки');
+            }
+            messageInput.value = '';
+            await loadMessages();
+        } catch (err) {
+            alert(err.message || 'Ошибка сети');
+        } finally {
+            sending = false;
+            sendButton.disabled = false;
+            messageInput.disabled = false;
+        }
+    }
+
     composer.addEventListener('submit', (event) => {
         event.preventDefault();
         const body = messageInput.value.trim();
         if (!body) {
             return;
         }
-        messageInput.value = '';
-        fetch('api/messages.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ body }),
-        })
-            .then((response) => response.json())
-            .then((data) => {
-                if (!data.ok) {
-                    throw new Error(data.error || 'Ошибка отправки');
-                }
-                return loadMessages();
-            })
-            .catch((error) => {
-                alert(error.message);
-            });
+        sendMessage(body);
     });
 
     setInterval(loadMessages, 2500);
