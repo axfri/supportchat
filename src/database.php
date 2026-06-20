@@ -182,9 +182,64 @@ function support_chat_find_or_create_telegram_conversation(PDO $pdo, string $cha
     return (int)$pdo->lastInsertId();
 }
 
-function support_chat_ingest_telegram_message(PDO $pdo, array $message): ?int
+function support_chat_telegram_profile(array $message): ?array
 {
     if (!isset($message['chat']) || !is_array($message['chat']) || !isset($message['chat']['id'])) {
+        return null;
+    }
+
+    $chat = $message['chat'];
+    $name = trim((string)($chat['first_name'] ?? '') . ' ' . (string)($chat['last_name'] ?? ''));
+    return [
+        'chat_id' => (string)$chat['id'],
+        'name' => $name !== '' ? $name : 'Telegram user',
+        'handle' => isset($chat['username']) ? '@' . (string)$chat['username'] : '',
+    ];
+}
+
+function support_chat_telegram_start_text(): string
+{
+    return "Здравствуйте! Вы написали в поддержку F-ART.bot.\n\nОпишите вопрос одним сообщением. Операторы постараются ответить быстрее.";
+}
+
+function support_chat_telegram_help_text(): string
+{
+    return "Команды бота:\n/start - начать диалог с поддержкой\n/help - помощь\n\nЧтобы связаться с оператором, просто отправьте сообщение в этот чат.";
+}
+
+function support_chat_handle_telegram_message(PDO $pdo, array $message): array
+{
+    $profile = support_chat_telegram_profile($message);
+    if ($profile === null) {
+        return ['stored' => false, 'reply' => null];
+    }
+
+    $text = trim((string)($message['text'] ?? ''));
+    $command = strtolower(preg_replace('/\s+.*$/', '', $text));
+    $command = preg_replace('/@.+$/', '', $command);
+    $conversationId = support_chat_find_or_create_telegram_conversation($pdo, $profile['chat_id'], $profile['name'], $profile['handle']);
+
+    if ($command === '/start') {
+        support_chat_update_conversation_status($pdo, $conversationId, 'open', false);
+        return ['stored' => false, 'reply' => support_chat_telegram_start_text()];
+    }
+
+    if ($command === '/help') {
+        return ['stored' => false, 'reply' => support_chat_telegram_help_text()];
+    }
+
+    if ($text !== '' && strpos($text, '/') === 0) {
+        return ['stored' => false, 'reply' => "Неизвестная команда. Нажмите /help, чтобы посмотреть список команд."];
+    }
+
+    $messageId = support_chat_ingest_telegram_message($pdo, $message);
+    return ['stored' => $messageId !== null, 'reply' => null];
+}
+
+function support_chat_ingest_telegram_message(PDO $pdo, array $message): ?int
+{
+    $profile = support_chat_telegram_profile($message);
+    if ($profile === null) {
         return null;
     }
 
@@ -193,14 +248,8 @@ function support_chat_ingest_telegram_message(PDO $pdo, array $message): ?int
         $text = '[не текстовое сообщение]';
     }
 
-    $chat = $message['chat'];
-    $chatId = (string)$chat['id'];
-    $name = trim((string)($chat['first_name'] ?? '') . ' ' . (string)($chat['last_name'] ?? ''));
-    $name = $name !== '' ? $name : 'Telegram user';
-    $handle = isset($chat['username']) ? '@' . (string)$chat['username'] : '';
     $telegramMessageId = isset($message['message_id']) ? (string)$message['message_id'] : null;
-
-    $conversationId = support_chat_find_or_create_telegram_conversation($pdo, $chatId, $name, $handle);
+    $conversationId = support_chat_find_or_create_telegram_conversation($pdo, $profile['chat_id'], $profile['name'], $profile['handle']);
     if (support_chat_telegram_message_exists($pdo, $conversationId, $telegramMessageId)) {
         return null;
     }

@@ -26,6 +26,9 @@ while (true) {
         }
 
         $pdo = support_chat_db();
-        support_chat_ingest_telegram_message($pdo, $message);
+        $result = support_chat_handle_telegram_message($pdo, $message);
+        if (!empty($result['reply']) && isset($message['chat']['id'])) {
+            support_chat_telegram_send((string)$message['chat']['id'], (string)$result['reply']);
+        }
     }
 }

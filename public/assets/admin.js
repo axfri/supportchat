@@ -1,14 +1,12 @@
 (function () {
     const tokenInput = document.getElementById('adminToken');
     const authForm = document.getElementById('authForm');
-    const refreshButton = document.getElementById('refreshButton');
     const conversationList = document.getElementById('conversationList');
     const messages = document.getElementById('messages');
     const chatTitle = document.getElementById('chatTitle');
     const chatSubtitle = document.getElementById('chatSubtitle');
     const channelBadge = document.getElementById('channelBadge');
     const statusBadge = document.getElementById('statusBadge');
-    const statusButton = document.getElementById('statusButton');
     const composer = document.getElementById('composer');
     const messageInput = document.getElementById('messageInput');
     const sendButton = document.getElementById('sendButton');
@@ -109,8 +107,6 @@
             channelBadge.className = 'badge muted';
             statusBadge.textContent = '-';
             statusBadge.className = 'badge muted';
-            statusButton.textContent = 'Закрыть';
-            statusButton.disabled = true;
             messageInput.disabled = true;
             sendButton.disabled = true;
             return;
@@ -122,8 +118,6 @@
         channelBadge.className = 'badge ' + item.channel;
         statusBadge.textContent = statusText(item.status);
         statusBadge.className = 'badge status-' + (item.status || 'open');
-        statusButton.disabled = false;
-        statusButton.textContent = item.status === 'closed' ? 'Открыть' : 'Закрыть';
 
         const closed = item.status === 'closed';
         messageInput.disabled = closed || sending;
@@ -215,41 +209,30 @@
             });
     }
 
-    async function updateStatus(status) {
-        if (!selectedId) return;
-        await api('api/conversations.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ conversation_id: selectedId, status }),
-        });
-        messageSignature = '';
-        await loadConversations();
-    }
-
     authForm.addEventListener('submit', (event) => {
         event.preventDefault();
         token = tokenInput.value.trim();
         localStorage.setItem('support_admin_token', token);
+        selectedId = null;
+        selectedConversation = null;
+        messageSignature = '';
         loadConversations();
     });
 
-    refreshButton.addEventListener('click', () => {
+    function resetSelectionAndLoad() {
+        selectedId = null;
+        selectedConversation = null;
+        messageSignature = '';
+        messages.innerHTML = '<div class="empty">Выберите диалог</div>';
         loadConversations();
-    });
+    }
 
     searchInput.addEventListener('input', () => {
         window.clearTimeout(searchInput._timer);
-        searchInput._timer = window.setTimeout(loadConversations, 250);
+        searchInput._timer = window.setTimeout(resetSelectionAndLoad, 250);
     });
-    statusFilter.addEventListener('change', loadConversations);
-    channelFilter.addEventListener('change', loadConversations);
-
-    statusButton.addEventListener('click', () => {
-        if (!selectedConversation) return;
-        updateStatus(selectedConversation.status === 'closed' ? 'open' : 'closed').catch((error) => {
-            alert(error.message);
-        });
-    });
+    statusFilter.addEventListener('change', resetSelectionAndLoad);
+    channelFilter.addEventListener('change', resetSelectionAndLoad);
 
     conversationList.addEventListener('click', (event) => {
         const button = event.target.closest('.conversation');

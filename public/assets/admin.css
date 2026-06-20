@@ -148,7 +148,6 @@ textarea:focus-visible {
     font-weight: 600;
 }
 
-.icon-button,
 .secondary-button {
     min-height: 42px;
     border: 1px solid var(--line);
@@ -159,14 +158,6 @@ textarea:focus-visible {
     transition: background .2s, transform .2s, border-color .2s;
 }
 
-.icon-button {
-    width: 42px;
-    display: grid;
-    place-items: center;
-    font-size: 20px;
-}
-
-.icon-button:hover,
 .secondary-button:hover {
     border-color: var(--blue);
     background: var(--blue-soft);

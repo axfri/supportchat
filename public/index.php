@@ -16,7 +16,6 @@
                 <a class="fart-logo" href="#" aria-label="F-ART.bot">
                     <b>F</b><strong>-ART</strong><small>.bot</small>
                 </a>
-                <button class="icon-button" id="refreshButton" title="Обновить">↻</button>
             </div>
 
             <div class="section-title">
@@ -61,7 +60,6 @@
                 <div class="header-actions">
                     <span class="badge muted" id="statusBadge">-</span>
                     <span class="badge muted" id="channelBadge">-</span>
-                    <button class="secondary-button" id="statusButton" type="button" disabled>Закрыть</button>
                 </div>
             </header>
 

@@ -23,6 +23,8 @@ const STATUS_LABELS = {
   open: '\u0414\u0438\u0430\u043b\u043e\u0433 \u043e\u0442\u043a\u0440\u044b\u0442',
   closed: '\u0414\u0438\u0430\u043b\u043e\u0433 \u0437\u0430\u043a\u0440\u044b\u0442',
 };
+const START_TEXT = '\u0417\u0434\u0440\u0430\u0432\u0441\u0442\u0432\u0443\u0439\u0442\u0435! \u0412\u044b \u043d\u0430\u043f\u0438\u0441\u0430\u043b\u0438 \u0432 \u043f\u043e\u0434\u0434\u0435\u0440\u0436\u043a\u0443 F-ART.bot.\n\n\u041e\u043f\u0438\u0448\u0438\u0442\u0435 \u0432\u043e\u043f\u0440\u043e\u0441 \u043e\u0434\u043d\u0438\u043c \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435\u043c. \u041e\u043f\u0435\u0440\u0430\u0442\u043e\u0440\u044b \u043f\u043e\u0441\u0442\u0430\u0440\u0430\u044e\u0442\u0441\u044f \u043e\u0442\u0432\u0435\u0442\u0438\u0442\u044c \u0431\u044b\u0441\u0442\u0440\u0435\u0435.';
+const HELP_TEXT = '\u041a\u043e\u043c\u0430\u043d\u0434\u044b \u0431\u043e\u0442\u0430:\n/start - \u043d\u0430\u0447\u0430\u0442\u044c \u0434\u0438\u0430\u043b\u043e\u0433 \u0441 \u043f\u043e\u0434\u0434\u0435\u0440\u0436\u043a\u043e\u0439\n/help - \u043f\u043e\u043c\u043e\u0449\u044c\n\n\u0427\u0442\u043e\u0431\u044b \u0441\u0432\u044f\u0437\u0430\u0442\u044c\u0441\u044f \u0441 \u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440\u043e\u043c, \u043f\u0440\u043e\u0441\u0442\u043e \u043e\u0442\u043f\u0440\u0430\u0432\u044c\u0442\u0435 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435 \u0432 \u044d\u0442\u043e\u0442 \u0447\u0430\u0442.';
 
 fs.mkdirSync(storageDir, { recursive: true });
 
@@ -244,6 +246,36 @@ function ingestTelegramMessage(data, message) {
   return Boolean(item);
 }
 
+function handleTelegramMessage(data, message) {
+  const chat = message.chat || {};
+  if (!chat.id) return { changed: false, reply: null };
+
+  const text = String(message.text || '').trim();
+  const command = text.split(/\s+/)[0].toLowerCase().replace(/@.+$/, '');
+  const name = `${chat.first_name || ''} ${chat.last_name || ''}`.trim() || 'Telegram user';
+  const handle = chat.username ? `@${chat.username}` : '';
+  const conversation = findOrCreateTelegramConversation(data, String(chat.id), name, handle);
+
+  if (command === '/start') {
+    conversation.status = 'open';
+    conversation.updated_at = now();
+    return { changed: true, reply: START_TEXT };
+  }
+
+  if (command === '/help') {
+    return { changed: false, reply: HELP_TEXT };
+  }
+
+  if (text.startsWith('/')) {
+    return {
+      changed: false,
+      reply: '\u041d\u0435\u0438\u0437\u0432\u0435\u0441\u0442\u043d\u0430\u044f \u043a\u043e\u043c\u0430\u043d\u0434\u0430. \u041d\u0430\u0436\u043c\u0438\u0442\u0435 /help, \u0447\u0442\u043e\u0431\u044b \u043f\u043e\u0441\u043c\u043e\u0442\u0440\u0435\u0442\u044c \u0441\u043f\u0438\u0441\u043e\u043a \u043a\u043e\u043c\u0430\u043d\u0434.',
+    };
+  }
+
+  return { changed: ingestTelegramMessage(data, message), reply: null };
+}
+
 async function sendTelegram(chatId, body) {
   if (!telegramToken) return;
   try {
@@ -287,7 +319,13 @@ async function pollTelegramOnce() {
 
   for (const update of result.result) {
     nextOffset = Math.max(nextOffset, Number(update.update_id || 0) + 1);
-    if (update.message && ingestTelegramMessage(data, update.message)) changed = true;
+    if (update.message) {
+      const handled = handleTelegramMessage(data, update.message);
+      if (handled.changed) changed = true;
+      if (handled.reply && update.message.chat && update.message.chat.id) {
+        await sendTelegram(String(update.message.chat.id), handled.reply);
+      }
+    }
   }
 
   fs.writeFileSync(offsetFile, String(nextOffset), 'utf8');
@@ -446,7 +484,11 @@ async function handleApi(req, res, url) {
 
   if (url.pathname === '/telegram-webhook.php' && req.method === 'POST') {
     const update = await readBody(req);
-    if (ingestTelegramMessage(data, update.message || {})) writeData(data);
+    const handled = handleTelegramMessage(data, update.message || {});
+    if (handled.changed) writeData(data);
+    if (handled.reply && update.message && update.message.chat && update.message.chat.id) {
+      await sendTelegram(String(update.message.chat.id), handled.reply);
+    }
     json(res, 200, { ok: true });
     return;
   }
