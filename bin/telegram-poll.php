@@ -21,23 +21,11 @@ while (true) {
         file_put_contents($offsetFile, (string)$offset);
 
         $message = $update['message'] ?? null;
-        if (!is_array($message) || !isset($message['chat']['id'])) {
+        if (!is_array($message)) {
             continue;
         }
 
-        $text = trim((string)($message['text'] ?? ''));
-        if ($text === '') {
-            $text = '[не текстовое сообщение]';
-        }
-
-        $chat = $message['chat'];
-        $chatId = (string)$chat['id'];
-        $name = trim((string)($chat['first_name'] ?? '') . ' ' . (string)($chat['last_name'] ?? ''));
-        $name = $name !== '' ? $name : 'Telegram user';
-        $handle = isset($chat['username']) ? '@' . (string)$chat['username'] : '';
-
         $pdo = support_chat_db();
-        $conversationId = support_chat_find_or_create_telegram_conversation($pdo, $chatId, $name, $handle);
-        support_chat_add_message($pdo, $conversationId, 'visitor', $text, isset($message['message_id']) ? (string)$message['message_id'] : null);
+        support_chat_ingest_telegram_message($pdo, $message);
     }
 }

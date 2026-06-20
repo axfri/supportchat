@@ -14,9 +14,15 @@ const env = loadEnv();
 const adminToken = env.SUPPORT_ADMIN_TOKEN || 'admin';
 const telegramToken = env.TELEGRAM_BOT_TOKEN || '';
 const telegramPolling = process.argv.includes('--telegram-polling') || env.TELEGRAM_POLLING === '1';
+const rateBuckets = new Map();
 
 const WEB_VISITOR_NAME = '\u041f\u043e\u0441\u0435\u0442\u0438\u0442\u0435\u043b\u044c \u0441\u0430\u0439\u0442\u0430';
 const NON_TEXT_MESSAGE = '[\u043d\u0435 \u0442\u0435\u043a\u0441\u0442\u043e\u0432\u043e\u0435 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435]';
+const STATUS_LABELS = {
+  new: '\u0414\u0438\u0430\u043b\u043e\u0433 \u043f\u043e\u043c\u0435\u0447\u0435\u043d \u043a\u0430\u043a \u043d\u043e\u0432\u044b\u0439',
+  open: '\u0414\u0438\u0430\u043b\u043e\u0433 \u043e\u0442\u043a\u0440\u044b\u0442',
+  closed: '\u0414\u0438\u0430\u043b\u043e\u0433 \u0437\u0430\u043a\u0440\u044b\u0442',
+};
 
 fs.mkdirSync(storageDir, { recursive: true });
 
@@ -36,15 +42,29 @@ function loadEnv() {
   return result;
 }
 
-function readData() {
-  if (!fs.existsSync(dataFile)) {
-    return { nextConversationId: 1, nextMessageId: 1, conversations: [], messages: [] };
+function emptyData() {
+  return { nextConversationId: 1, nextMessageId: 1, conversations: [], messages: [] };
+}
+
+function normalizeData(data) {
+  const normalized = Object.assign(emptyData(), data || {});
+  normalized.conversations = Array.isArray(normalized.conversations) ? normalized.conversations : [];
+  normalized.messages = Array.isArray(normalized.messages) ? normalized.messages : [];
+  for (const conversation of normalized.conversations) {
+    if (!['new', 'open', 'closed'].includes(conversation.status)) conversation.status = 'open';
+    conversation.unread_support = Number(conversation.unread_support || 0);
+    conversation.unread_visitor = Number(conversation.unread_visitor || 0);
   }
-  return JSON.parse(fs.readFileSync(dataFile, 'utf8'));
+  return normalized;
+}
+
+function readData() {
+  if (!fs.existsSync(dataFile)) return emptyData();
+  return normalizeData(JSON.parse(fs.readFileSync(dataFile, 'utf8')));
 }
 
 function writeData(data) {
-  fs.writeFileSync(dataFile, JSON.stringify(data, null, 2), 'utf8');
+  fs.writeFileSync(dataFile, JSON.stringify(normalizeData(data), null, 2), 'utf8');
 }
 
 function now() {
@@ -110,6 +130,22 @@ function getWebSession(req, res) {
   return sid;
 }
 
+function checkRateLimit(key, limit = 5, windowSeconds = 15) {
+  const current = Math.floor(Date.now() / 1000);
+  let bucket = rateBuckets.get(key);
+  if (!bucket || current - bucket.start >= windowSeconds) {
+    bucket = { start: current, count: 0 };
+  }
+  bucket.count += 1;
+  rateBuckets.set(key, bucket);
+  return bucket.count <= limit;
+}
+
+function validateStatus(status) {
+  if (!['new', 'open', 'closed'].includes(status)) throw new Error('Invalid status');
+  return status;
+}
+
 function findOrCreateWebConversation(data, sid) {
   let conversation = data.conversations.find((item) => item.channel === 'web' && item.external_id === sid);
   if (conversation) return conversation;
@@ -120,7 +156,7 @@ function findOrCreateWebConversation(data, sid) {
     external_id: sid,
     visitor_name: WEB_VISITOR_NAME,
     visitor_handle: '',
-    status: 'open',
+    status: 'new',
     unread_support: 0,
     unread_visitor: 0,
     created_at: now(),
@@ -145,7 +181,7 @@ function findOrCreateTelegramConversation(data, chatId, name, handle) {
     external_id: chatId,
     visitor_name: name || 'Telegram user',
     visitor_handle: handle || '',
-    status: 'open',
+    status: 'new',
     unread_support: 0,
     unread_visitor: 0,
     created_at: now(),
@@ -159,6 +195,9 @@ function addMessage(data, conversation, sender, body, telegramMessageId = '') {
   const message = String(body || '').trim();
   if (!message) throw new Error('Message is empty');
   if (Buffer.byteLength(message, 'utf8') > 12000) throw new Error('Message is too long');
+  if (sender === 'visitor' && telegramMessageId && data.messages.some((item) => item.conversation_id === conversation.id && item.telegram_message_id === telegramMessageId)) {
+    return null;
+  }
 
   const item = {
     id: data.nextMessageId++,
@@ -170,11 +209,27 @@ function addMessage(data, conversation, sender, body, telegramMessageId = '') {
   };
   data.messages.push(item);
 
-  if (sender === 'visitor') conversation.unread_support += 1;
-  if (sender === 'support') conversation.unread_visitor += 1;
+  if (sender === 'visitor') {
+    if (conversation.status === 'closed') conversation.status = 'new';
+    conversation.unread_support += 1;
+  }
+  if (sender === 'support') {
+    conversation.status = 'open';
+    conversation.unread_visitor += 1;
+  }
   conversation.updated_at = now();
 
   return item;
+}
+
+function updateConversationStatus(data, conversation, status) {
+  status = validateStatus(status);
+  if (conversation.status === status) return conversation;
+
+  conversation.status = status;
+  conversation.updated_at = now();
+  addMessage(data, conversation, 'system', STATUS_LABELS[status] || 'Status changed');
+  return conversation;
 }
 
 function ingestTelegramMessage(data, message) {
@@ -183,9 +238,10 @@ function ingestTelegramMessage(data, message) {
 
   const name = `${chat.first_name || ''} ${chat.last_name || ''}`.trim() || 'Telegram user';
   const handle = chat.username ? `@${chat.username}` : '';
+  const messageId = String(message.message_id || '');
   const conversation = findOrCreateTelegramConversation(data, String(chat.id), name, handle);
-  addMessage(data, conversation, 'visitor', message.text || NON_TEXT_MESSAGE, String(message.message_id || ''));
-  return true;
+  const item = addMessage(data, conversation, 'visitor', message.text || NON_TEXT_MESSAGE, messageId);
+  return Boolean(item);
 }
 
 async function sendTelegram(chatId, body) {
@@ -202,9 +258,7 @@ async function sendTelegram(chatId, body) {
 }
 
 async function telegramRequest(method, payload = {}) {
-  if (!telegramToken) {
-    throw new Error('TELEGRAM_BOT_TOKEN is not configured');
-  }
+  if (!telegramToken) throw new Error('TELEGRAM_BOT_TOKEN is not configured');
 
   const endpoint = `https://api.telegram.org/bot${telegramToken}/${method}`;
   const response = await fetch(endpoint, {
@@ -233,9 +287,7 @@ async function pollTelegramOnce() {
 
   for (const update of result.result) {
     nextOffset = Math.max(nextOffset, Number(update.update_id || 0) + 1);
-    if (update.message && ingestTelegramMessage(data, update.message)) {
-      changed = true;
-    }
+    if (update.message && ingestTelegramMessage(data, update.message)) changed = true;
   }
 
   fs.writeFileSync(offsetFile, String(nextOffset), 'utf8');
@@ -249,7 +301,6 @@ function startTelegramPolling() {
   }
 
   console.log('Telegram polling enabled');
-
   const loop = async () => {
     try {
       await pollTelegramOnce();
@@ -259,8 +310,35 @@ function startTelegramPolling() {
     }
     setImmediate(loop);
   };
-
   loop();
+}
+
+function conversationList(data, url) {
+  let conversations = data.conversations.slice();
+  const status = url.searchParams.get('status') || '';
+  const channel = url.searchParams.get('channel') || '';
+  const search = (url.searchParams.get('search') || '').trim().toLowerCase();
+
+  if (status) conversations = conversations.filter((item) => item.status === status);
+  if (channel) conversations = conversations.filter((item) => item.channel === channel);
+  if (search) {
+    conversations = conversations.filter((item) => [item.visitor_name, item.visitor_handle, item.external_id]
+      .some((value) => String(value || '').toLowerCase().includes(search)));
+  }
+
+  return conversations
+    .map((conversation) => {
+      const last = data.messages
+        .filter((message) => message.conversation_id === conversation.id)
+        .sort((a, b) => b.id - a.id)[0];
+      return {
+        ...conversation,
+        last_message: last ? last.body : '',
+        last_sender: last ? last.sender : '',
+        last_message_at: last ? last.created_at : '',
+      };
+    })
+    .sort((a, b) => b.updated_at.localeCompare(a.updated_at) || b.id - a.id);
 }
 
 async function handleApi(req, res, url) {
@@ -269,22 +347,28 @@ async function handleApi(req, res, url) {
   if (url.pathname === '/api/conversations.php') {
     if (!requireAdmin(req, res)) return;
 
-    const conversations = data.conversations
-      .map((conversation) => {
-        const last = data.messages
-          .filter((message) => message.conversation_id === conversation.id)
-          .sort((a, b) => b.id - a.id)[0];
-        return {
-          ...conversation,
-          last_message: last ? last.body : '',
-          last_sender: last ? last.sender : '',
-          last_message_at: last ? last.created_at : '',
-        };
-      })
-      .sort((a, b) => b.updated_at.localeCompare(a.updated_at) || b.id - a.id);
+    if (req.method === 'GET') {
+      json(res, 200, { ok: true, conversations: conversationList(data, url) });
+      return;
+    }
 
-    json(res, 200, { ok: true, conversations });
-    return;
+    if (req.method === 'POST') {
+      const payload = await readBody(req);
+      const id = Number(payload.conversation_id || 0);
+      const conversation = data.conversations.find((item) => item.id === id);
+      if (!conversation) {
+        json(res, 404, { ok: false, error: 'Conversation not found' });
+        return;
+      }
+      try {
+        updateConversationStatus(data, conversation, String(payload.status || ''));
+        writeData(data);
+        json(res, 200, { ok: true, conversation });
+      } catch (error) {
+        json(res, 422, { ok: false, error: error.message });
+      }
+      return;
+    }
   }
 
   if (url.pathname === '/api/messages.php') {
@@ -314,7 +398,7 @@ async function handleApi(req, res, url) {
         .filter((message) => message.conversation_id === conversation.id)
         .sort((a, b) => a.id - b.id);
 
-      json(res, 200, { ok: true, conversation_id: conversation.id, messages });
+      json(res, 200, { ok: true, conversation_id: conversation.id, conversation, messages });
       return;
     }
 
@@ -327,11 +411,20 @@ async function handleApi(req, res, url) {
         const id = Number(payload.conversation_id || 0);
         conversation = data.conversations.find((item) => item.id === id);
       } else {
-        conversation = findOrCreateWebConversation(data, getWebSession(req, res));
+        const sid = getWebSession(req, res);
+        if (!checkRateLimit(`web:${sid}`)) {
+          json(res, 429, { ok: false, error: 'Too many messages, please wait' });
+          return;
+        }
+        conversation = findOrCreateWebConversation(data, sid);
       }
 
       if (!conversation) {
         json(res, 422, { ok: false, error: 'Conversation is required' });
+        return;
+      }
+      if (isAdmin && conversation.status === 'closed') {
+        json(res, 409, { ok: false, error: 'Conversation is closed' });
         return;
       }
 
@@ -343,7 +436,7 @@ async function handleApi(req, res, url) {
           await sendTelegram(conversation.external_id, body);
         }
 
-        json(res, 200, { ok: true, message_id: message.id, conversation_id: conversation.id });
+        json(res, 200, { ok: true, message_id: message ? message.id : 0, conversation_id: conversation.id });
       } catch (error) {
         json(res, 422, { ok: false, error: error.message });
       }

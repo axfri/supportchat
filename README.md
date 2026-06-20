@@ -1,8 +1,22 @@
 # Support Chat
 
-Автономный веб-чат поддержки.
+Автономный веб-чат поддержки для сайта и Telegram.
 
-Проект содержит PHP-версию для сервера и Node.js dev-сервер для локальной разработки без установленного PHP.
+## Что уже есть
+
+- Панель оператора: `public/index.php`
+- Клиентская страница поддержки: `public/support.php`
+- Автообновление сообщений в фоне
+- Метки источника: `Сайт` и `Telegram`
+- Статусы диалогов: `Новый`, `Открыт`, `Закрыт`
+- Поиск и фильтры по каналу/статусу
+- Закрытие и повторное открытие диалогов
+- Прием Telegram-сообщений через webhook или polling
+- Ответы оператора обратно в Telegram
+- Защита от повторной записи одного Telegram-сообщения
+- Ограничение частоты сообщений с сайта
+- Локальный Node.js-сервер для разработки без PHP
+- PHP + SQLite версия для установки на сервер
 
 ## Локальный запуск
 
@@ -18,54 +32,26 @@ npm start
 - страница клиента: `http://localhost:8080/support.php`
 - ключ доступа по умолчанию: `admin`
 
-Локальный запуск с приемом сообщений из Telegram через polling:
+Если в `.env` указан `SUPPORT_ADMIN_TOKEN`, используйте его вместо `admin`.
+
+## Локальный запуск с Telegram
+
+1. Создайте `.env`.
+2. Укажите `TELEGRAM_BOT_TOKEN`.
+3. Запустите:
 
 ```bash
 npm run start:telegram
 ```
 
-Для этого в `.env` должен быть указан `TELEGRAM_BOT_TOKEN`.
-
-Чтобы изменить порт:
-
-```bash
-$env:PORT=8090; npm start
-```
-
-Чтобы задать свой ключ доступа, создайте `.env`:
-
-```env
-SUPPORT_ADMIN_TOKEN=my-secret-token
-TELEGRAM_BOT_TOKEN=put-telegram-bot-token-here
-TELEGRAM_WEBHOOK_SECRET=change-me-webhook-secret
-```
-
-Локальные данные сохраняются в `storage/local-data.json`.
-
-## Как проверить локально
-
-1. Запустите `npm start`.
-2. Откройте `http://localhost:8080/support.php`.
-3. Напишите сообщение от клиента.
-4. Откройте `http://localhost:8080/index.php`.
-5. Введите ключ `admin`.
-6. Выберите диалог с меткой `Сайт`.
-7. Ответьте из панели поддержки.
-8. Вернитесь на страницу клиента: ответ появится автоматически.
-
-## Проверка Telegram локально
-
-Вариант 1: реальный бот через polling.
-
-1. Создайте `.env`.
-2. Добавьте `TELEGRAM_BOT_TOKEN`.
-3. Запустите `npm run start:telegram`.
 4. Напишите сообщение боту в Telegram.
 5. Откройте панель поддержки: появится диалог с меткой `Telegram`.
 
-Вариант 2: тестовый webhook-запрос без реального Telegram.
+Важно: если у бота уже установлен webhook на сервер, polling может не получать сообщения. На время локальной проверки webhook нужно удалить через BotFather/API или использовать тестовый webhook-запрос ниже.
 
-```bash
+## Проверка без реального Telegram
+
+```powershell
 Invoke-RestMethod -Method Post http://localhost:8080/telegram-webhook.php `
   -ContentType "application/json" `
   -Body '{"message":{"message_id":1,"text":"Привет из Telegram","chat":{"id":12345,"first_name":"Test","username":"test_user"}}}'
@@ -73,16 +59,65 @@ Invoke-RestMethod -Method Post http://localhost:8080/telegram-webhook.php `
 
 После этого в панели появится диалог с меткой `Telegram`.
 
-## Установка на сервер
+## Проверка сайта локально
 
-1. Скопируйте папку проекта на отдельный сайт или поддомен.
+1. Откройте `http://localhost:8080/support.php`.
+2. Напишите сообщение от клиента.
+3. Откройте `http://localhost:8080/index.php`.
+4. Введите ключ доступа.
+5. Выберите диалог с меткой `Сайт`.
+6. Ответьте из панели.
+7. Ответ появится на клиентской странице автоматически.
+
+## Команды
+
+```bash
+npm start
+npm run start:telegram
+```
+
+Изменить порт:
+
+```powershell
+$env:PORT=8090; npm start
+```
+
+Локальные данные хранятся в `storage/local-data.json` и не попадают в Git.
+
+## Серверная установка
+
+1. Скопируйте проект на отдельный сайт или поддомен.
 2. Создайте `.env` из `.env.example`.
-3. Укажите секреты:
-   - `SUPPORT_ADMIN_TOKEN` - пароль доступа к панели поддержки.
-   - `TELEGRAM_BOT_TOKEN` - токен отдельного Telegram-бота.
-   - `TELEGRAM_WEBHOOK_SECRET` - произвольная длинная строка для защиты webhook.
+3. Заполните:
+   - `APP_URL`
+   - `SQLITE_PATH`
+   - `SUPPORT_ADMIN_TOKEN`
+   - `TELEGRAM_BOT_TOKEN`
+   - `TELEGRAM_WEBHOOK_SECRET`
 4. Дайте PHP право записи в папку `storage`.
-5. Откройте `/index.php`, введите `SUPPORT_ADMIN_TOKEN`.
+5. Откройте `/index.php` и войдите по `SUPPORT_ADMIN_TOKEN`.
 
-Важно: токен бота не храните в Git. Если токен был опубликован в переписке или логах, перевыпустите его через BotFather.
+## Telegram webhook на сервере
 
+```bash
+curl "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/setWebhook" \
+  -d "url=$APP_URL/telegram-webhook.php?secret=$TELEGRAM_WEBHOOK_SECRET"
+```
+
+Можно также передавать секрет через заголовок `X-Telegram-Bot-Api-Secret-Token`, если webhook настраивается вручную.
+
+## Telegram polling на сервере
+
+Если webhook недоступен:
+
+```bash
+php bin/telegram-poll.php
+```
+
+## Безопасность
+
+- Не храните `.env` в Git.
+- Не храните реальный Telegram token в `.env.example`.
+- Если token был отправлен в чат или лог, перевыпустите его через BotFather.
+- Панель поддержки закрыта `SUPPORT_ADMIN_TOKEN`.
+- Telegram webhook защищается `TELEGRAM_WEBHOOK_SECRET`.

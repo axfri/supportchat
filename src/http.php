@@ -43,6 +43,26 @@ function support_chat_input(): array
     return is_array($data) ? $data : [];
 }
 
+function support_chat_rate_limit(string $key, int $limit = 5, int $windowSeconds = 15): void
+{
+    support_chat_session_start();
+
+    $now = time();
+    $bucketKey = 'rate_limit_' . preg_replace('/[^a-z0-9_:-]/i', '_', $key);
+    $bucket = $_SESSION[$bucketKey] ?? ['start' => $now, 'count' => 0];
+
+    if (!is_array($bucket) || ($now - (int)($bucket['start'] ?? 0)) >= $windowSeconds) {
+        $bucket = ['start' => $now, 'count' => 0];
+    }
+
+    $bucket['count'] = (int)$bucket['count'] + 1;
+    $_SESSION[$bucketKey] = $bucket;
+
+    if ($bucket['count'] > $limit) {
+        support_chat_json(['ok' => false, 'error' => 'Too many messages, please wait'], 429);
+    }
+}
+
 function support_chat_require_admin(): void
 {
     $expected = support_chat_env('SUPPORT_ADMIN_TOKEN');

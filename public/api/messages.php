@@ -39,9 +39,12 @@ if ($method === 'GET') {
         support_chat_log_error('Failed to update unread flags: ' . $e->getMessage());
     }
 
+    $conversation = support_chat_get_conversation($pdo, $conversationId);
+
     support_chat_json([
         'ok' => true,
         'conversation_id' => $conversationId,
+        'conversation' => $conversation,
         'messages' => $stmt->fetchAll(),
     ]);
 }
@@ -61,15 +64,16 @@ if ($method === 'POST') {
                 support_chat_json(['ok' => false, 'error' => 'Conversation is required'], 422);
             }
 
-            // Verify conversation exists
             $conv = support_chat_get_conversation($pdo, $conversationId);
             if ($conv === null) {
                 support_chat_json(['ok' => false, 'error' => 'Conversation not found'], 404);
             }
+            if ($conv['status'] === 'closed') {
+                support_chat_json(['ok' => false, 'error' => 'Conversation is closed'], 409);
+            }
 
             $messageId = support_chat_add_message($pdo, $conversationId, 'support', $body);
 
-            // If telegram, try to send and log failures
             if ($conv['channel'] === 'telegram' && $conv['external_id'] !== '') {
                 $res = support_chat_telegram_send((string)$conv['external_id'], $body);
                 if (empty($res['ok'])) {
@@ -78,6 +82,7 @@ if ($method === 'POST') {
                 }
             }
         } else {
+            support_chat_rate_limit('web_message');
             $conversationId = support_chat_find_or_create_web_conversation($pdo, session_id());
             $messageId = support_chat_add_message($pdo, $conversationId, 'visitor', $body);
         }

@@ -18,7 +18,7 @@
     }
 
     function render(items) {
-        const signature = JSON.stringify(items.map((message) => [message.id, message.body]));
+        const signature = JSON.stringify(items.map((message) => [message.id, message.sender, message.body]));
         if (signature === messageSignature) {
             return;
         }
@@ -30,12 +30,23 @@
         }
 
         messages.innerHTML = items.map((message) => `
-            <article class="message ${message.sender === 'support' ? 'support' : 'visitor'}">
-                <div class="message-meta">${message.sender === 'support' ? 'Поддержка' : 'Вы'} · ${escapeHtml(message.created_at)}</div>
+            <article class="message ${message.sender}">
+                <div class="message-meta">${message.sender === 'support' ? 'Поддержка' : message.sender === 'system' ? 'Система' : 'Вы'} · ${escapeHtml(message.created_at)}</div>
                 <div class="message-body">${escapeHtml(message.body)}</div>
             </article>
         `).join('');
         messages.scrollTop = messages.scrollHeight;
+    }
+
+    function applyConversationState(conversation) {
+        if (!conversation) return;
+        if (conversation.status === 'closed') {
+            status.textContent = 'closed';
+            messageInput.placeholder = 'Напишите новое сообщение, чтобы открыть диалог снова';
+        } else {
+            status.textContent = 'online';
+            messageInput.placeholder = 'Введите сообщение';
+        }
     }
 
     function loadMessages() {
@@ -45,7 +56,7 @@
                 if (!data.ok) {
                     throw new Error(data.error || 'Ошибка загрузки');
                 }
-                status.textContent = 'online';
+                applyConversationState(data.conversation);
                 render(data.messages || []);
             })
             .catch(() => {
@@ -76,6 +87,7 @@
             sending = false;
             sendButton.disabled = false;
             messageInput.disabled = false;
+            messageInput.focus();
         }
     }
 

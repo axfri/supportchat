@@ -57,6 +57,20 @@ function support_chat_migrate(PDO $pdo): void
 
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, id)');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at DESC)');
+    $pdo->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_telegram_unique ON messages(conversation_id, telegram_message_id) WHERE telegram_message_id IS NOT NULL AND telegram_message_id != ''");
+}
+
+function support_chat_statuses(): array
+{
+    return ['new', 'open', 'closed'];
+}
+
+function support_chat_validate_status(string $status): string
+{
+    if (!in_array($status, support_chat_statuses(), true)) {
+        throw new InvalidArgumentException('Invalid status');
+    }
+    return $status;
 }
 
 function support_chat_get_conversation(PDO $pdo, int $id): ?array
@@ -67,9 +81,47 @@ function support_chat_get_conversation(PDO $pdo, int $id): ?array
     return is_array($conversation) ? $conversation : null;
 }
 
+function support_chat_update_conversation_status(PDO $pdo, int $id, string $status, bool $addSystemMessage = true): array
+{
+    $status = support_chat_validate_status($status);
+    $conversation = support_chat_get_conversation($pdo, $id);
+    if ($conversation === null) {
+        throw new InvalidArgumentException('Conversation not found');
+    }
+
+    if ((string)$conversation['status'] !== $status) {
+        $stmt = $pdo->prepare('UPDATE conversations SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+        $stmt->execute([$status, $id]);
+
+        if ($addSystemMessage) {
+            $labels = [
+                'new' => 'Диалог помечен как новый',
+                'open' => 'Диалог открыт',
+                'closed' => 'Диалог закрыт',
+            ];
+            support_chat_add_message($pdo, $id, 'system', $labels[$status] ?? 'Статус диалога изменен');
+        }
+    }
+
+    return support_chat_get_conversation($pdo, $id) ?? $conversation;
+}
+
+function support_chat_telegram_message_exists(PDO $pdo, int $conversationId, ?string $telegramMessageId): bool
+{
+    $telegramMessageId = trim((string)$telegramMessageId);
+    if ($telegramMessageId === '') {
+        return false;
+    }
+
+    $stmt = $pdo->prepare('SELECT 1 FROM messages WHERE conversation_id = ? AND telegram_message_id = ? LIMIT 1');
+    $stmt->execute([$conversationId, $telegramMessageId]);
+    return (bool)$stmt->fetchColumn();
+}
+
 function support_chat_add_message(PDO $pdo, int $conversationId, string $sender, string $body, ?string $telegramMessageId = null): int
 {
-    if (!support_chat_get_conversation($pdo, $conversationId)) {
+    $conversation = support_chat_get_conversation($pdo, $conversationId);
+    if ($conversation === null) {
         throw new InvalidArgumentException('Conversation not found');
     }
 
@@ -80,15 +132,18 @@ function support_chat_add_message(PDO $pdo, int $conversationId, string $sender,
     if (strlen($body) > 12000) {
         throw new InvalidArgumentException('Message is too long');
     }
+    if ($sender === 'visitor' && support_chat_telegram_message_exists($pdo, $conversationId, $telegramMessageId)) {
+        return 0;
+    }
 
     $stmt = $pdo->prepare('INSERT INTO messages (conversation_id, sender, body, telegram_message_id) VALUES (?, ?, ?, ?)');
     $stmt->execute([$conversationId, $sender, $body, $telegramMessageId]);
     $messageId = (int)$pdo->lastInsertId();
 
     if ($sender === 'visitor') {
-        $stmt = $pdo->prepare('UPDATE conversations SET unread_support = unread_support + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+        $stmt = $pdo->prepare("UPDATE conversations SET status = CASE WHEN status = 'closed' THEN 'new' ELSE status END, unread_support = unread_support + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?");
     } elseif ($sender === 'support') {
-        $stmt = $pdo->prepare('UPDATE conversations SET unread_visitor = unread_visitor + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+        $stmt = $pdo->prepare("UPDATE conversations SET status = 'open', unread_visitor = unread_visitor + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?");
     } else {
         $stmt = $pdo->prepare('UPDATE conversations SET updated_at = CURRENT_TIMESTAMP WHERE id = ?');
     }
@@ -106,7 +161,7 @@ function support_chat_find_or_create_web_conversation(PDO $pdo, string $sessionI
         return (int)$id;
     }
 
-    $stmt = $pdo->prepare("INSERT INTO conversations (channel, external_id, visitor_name) VALUES ('web', ?, ?)");
+    $stmt = $pdo->prepare("INSERT INTO conversations (channel, external_id, visitor_name, status) VALUES ('web', ?, ?, 'new')");
     $stmt->execute([$sessionId, 'Посетитель сайта']);
     return (int)$pdo->lastInsertId();
 }
@@ -122,7 +177,33 @@ function support_chat_find_or_create_telegram_conversation(PDO $pdo, string $cha
         return (int)$id;
     }
 
-    $stmt = $pdo->prepare("INSERT INTO conversations (channel, external_id, visitor_name, visitor_handle) VALUES ('telegram', ?, ?, ?)");
+    $stmt = $pdo->prepare("INSERT INTO conversations (channel, external_id, visitor_name, visitor_handle, status) VALUES ('telegram', ?, ?, ?, 'new')");
     $stmt->execute([$chatId, $name, $handle]);
     return (int)$pdo->lastInsertId();
+}
+
+function support_chat_ingest_telegram_message(PDO $pdo, array $message): ?int
+{
+    if (!isset($message['chat']) || !is_array($message['chat']) || !isset($message['chat']['id'])) {
+        return null;
+    }
+
+    $text = trim((string)($message['text'] ?? ''));
+    if ($text === '') {
+        $text = '[не текстовое сообщение]';
+    }
+
+    $chat = $message['chat'];
+    $chatId = (string)$chat['id'];
+    $name = trim((string)($chat['first_name'] ?? '') . ' ' . (string)($chat['last_name'] ?? ''));
+    $name = $name !== '' ? $name : 'Telegram user';
+    $handle = isset($chat['username']) ? '@' . (string)$chat['username'] : '';
+    $telegramMessageId = isset($message['message_id']) ? (string)$message['message_id'] : null;
+
+    $conversationId = support_chat_find_or_create_telegram_conversation($pdo, $chatId, $name, $handle);
+    if (support_chat_telegram_message_exists($pdo, $conversationId, $telegramMessageId)) {
+        return null;
+    }
+
+    return support_chat_add_message($pdo, $conversationId, 'visitor', $text, $telegramMessageId);
 }
