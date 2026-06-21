@@ -11,16 +11,30 @@
 </head>
 <body>
     <main class="support-shell">
-        <section class="support-panel">
+        <section class="support-stage">
+            <span class="fart-logo"><b>F</b><strong>-ART</strong><small>.bot</small></span>
+            <h1>Поддержка</h1>
+            <p>Откройте чат и напишите вопрос. Ответ оператора появится здесь автоматически.</p>
+        </section>
+
+        <button class="launcher hidden" id="launcher" type="button" aria-label="Открыть поддержку">
+            <span>Чат</span>
+            <strong id="launcherCount"></strong>
+        </button>
+
+        <section class="support-panel open" id="supportPanel">
             <header class="support-header">
                 <div class="support-brand">
                     <span class="fart-logo"><b>F</b><strong>-ART</strong><small>.bot</small></span>
                     <div>
                         <h1>Поддержка</h1>
-                        <p>Напишите вопрос, оператор ответит здесь</p>
+                        <p id="subtitle">Обычно отвечаем в течение нескольких минут</p>
                     </div>
                 </div>
-                <span class="status" id="status">online</span>
+                <div class="header-actions">
+                    <span class="status" id="status">online</span>
+                    <button class="close-chat" id="closeChat" type="button" aria-label="Свернуть чат">Свернуть</button>
+                </div>
             </header>
 
             <div class="messages" id="messages"></div>

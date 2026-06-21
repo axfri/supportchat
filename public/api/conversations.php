@@ -31,9 +31,9 @@ if ($method === 'GET') {
 
     $search = trim((string)($_GET['search'] ?? ''));
     if ($search !== '') {
-        $where[] = '(c.visitor_name LIKE ? OR c.visitor_handle LIKE ? OR c.external_id LIKE ?)';
+        $where[] = '(c.visitor_name LIKE ? OR c.visitor_handle LIKE ? OR c.external_id LIKE ? OR EXISTS (SELECT 1 FROM messages sm WHERE sm.conversation_id = c.id AND sm.body LIKE ?))';
         $needle = '%' . $search . '%';
-        array_push($params, $needle, $needle, $needle);
+        array_push($params, $needle, $needle, $needle, $needle);
     }
 
     $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';

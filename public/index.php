@@ -65,11 +65,52 @@
 
             <div class="messages" id="messages"></div>
 
+            <div class="quick-replies" id="quickReplies" aria-label="Быстрые ответы">
+                <button type="button" data-reply="Здравствуйте! Чем можем помочь?">Приветствие</button>
+                <button type="button" data-reply="Уточните, пожалуйста, номер заказа или логин.">Уточнить данные</button>
+                <button type="button" data-reply="Передали вопрос специалисту, скоро вернемся с ответом.">Передали специалисту</button>
+                <button type="button" data-reply="Спасибо за обращение! Если появятся вопросы, напишите нам снова.">Закрывающий ответ</button>
+            </div>
+
             <form class="composer" id="composer">
                 <textarea id="messageInput" rows="2" placeholder="Ответить клиенту" disabled></textarea>
                 <button type="submit" id="sendButton" disabled>Отправить</button>
             </form>
         </section>
+
+        <aside class="details" id="detailsPanel">
+            <div class="details-card">
+                <div class="client-avatar" id="clientAvatar">?</div>
+                <h3 id="clientName">Клиент не выбран</h3>
+                <p id="clientHandle">Выберите диалог слева</p>
+            </div>
+
+            <div class="details-card compact">
+                <span>Источник</span>
+                <strong id="detailChannel">-</strong>
+                <span>Статус</span>
+                <strong id="detailStatus">-</strong>
+                <span>Создан</span>
+                <strong id="detailCreated">-</strong>
+                <span>Обновлен</span>
+                <strong id="detailUpdated">-</strong>
+            </div>
+
+            <div class="details-card">
+                <h3>Действия</h3>
+                <div class="action-grid">
+                    <button type="button" class="secondary-button" data-status-action="new">Новый</button>
+                    <button type="button" class="secondary-button" data-status-action="open">В работе</button>
+                    <button type="button" class="secondary-button" data-status-action="closed">Закрыть</button>
+                    <button type="button" class="secondary-button" id="soundToggle">Звук: выкл</button>
+                </div>
+            </div>
+
+            <div class="details-card">
+                <h3>Заметка</h3>
+                <textarea class="note" id="operatorNote" placeholder="Личная заметка оператора"></textarea>
+            </div>
+        </aside>
     </main>
 
     <script src="assets/admin.js"></script>

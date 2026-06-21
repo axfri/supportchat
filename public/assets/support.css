@@ -15,6 +15,7 @@
     --blue-soft: #10213d;
     --visitor: #171a23;
     --support: #10213d;
+    --web: #20c997;
 }
 
 html,
@@ -55,40 +56,32 @@ textarea:focus-visible {
 
 .support-shell {
     min-height: 100vh;
-    display: grid;
-    place-items: center;
-    padding: 22px;
+    padding: 36px;
 }
 
-.support-panel {
-    width: min(860px, 100%);
-    height: min(800px, calc(100vh - 44px));
-    min-height: 520px;
-    display: grid;
-    grid-template-rows: auto minmax(0, 1fr) auto;
-    background: rgba(18, 20, 27, .94);
-    border: 1px solid var(--line);
-    border-radius: 24px;
-    box-shadow: 0 24px 70px rgba(0, 0, 0, .34);
-    overflow: hidden;
-    backdrop-filter: blur(18px);
+.support-stage {
+    width: min(760px, 100%);
+    padding-top: 10vh;
 }
 
-.support-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    padding: 18px 22px;
-    border-bottom: 1px solid var(--line);
-    background: rgba(18, 20, 27, .78);
+.support-stage .fart-logo {
+    font-size: 42px;
 }
 
-.support-brand {
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 16px;
+.support-stage h1 {
+    margin: 28px 0 10px;
+    font-size: clamp(38px, 6vw, 72px);
+    line-height: 1;
+    font-weight: 900;
+}
+
+.support-stage p {
+    max-width: 560px;
+    margin: 0;
+    color: var(--muted);
+    font-size: 18px;
+    line-height: 1.6;
+    font-weight: 650;
 }
 
 .fart-logo {
@@ -97,7 +90,6 @@ textarea:focus-visible {
     font-weight: 900;
     line-height: 1;
     white-space: nowrap;
-    font-size: 24px;
 }
 
 .fart-logo b {
@@ -115,9 +107,104 @@ textarea:focus-visible {
     margin-left: 2px;
 }
 
+.launcher {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 9;
+    min-width: 118px;
+    min-height: 58px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    border-radius: 999px;
+    background: var(--blue);
+    color: #fff;
+    padding: 0 22px;
+    font-weight: 900;
+    box-shadow: 0 18px 45px rgba(8, 119, 255, .36);
+    transition: transform .2s, background .2s, opacity .2s;
+}
+
+.launcher:hover {
+    background: var(--blue2);
+    transform: translateY(-2px);
+}
+
+.launcher.hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(12px);
+}
+
+.launcher strong {
+    min-width: 24px;
+    min-height: 24px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: #ff5360;
+    font-size: 12px;
+}
+
+.launcher strong:not(:empty) {
+    display: inline-flex;
+}
+
+.support-panel {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 10;
+    width: min(420px, calc(100vw - 32px));
+    height: min(680px, calc(100vh - 48px));
+    min-height: 520px;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    background: rgba(18, 20, 27, .96);
+    border: 1px solid var(--line);
+    border-radius: 24px;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, .38);
+    overflow: hidden;
+    backdrop-filter: blur(18px);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(18px) scale(.98);
+    transition: opacity .2s, transform .2s;
+}
+
+.support-panel.open {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0) scale(1);
+}
+
+.support-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 18px;
+    border-bottom: 1px solid var(--line);
+    background: rgba(18, 20, 27, .78);
+}
+
+.support-brand {
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 13px;
+}
+
+.support-brand .fart-logo {
+    font-size: 22px;
+}
+
 .support-header h1 {
     margin: 0;
-    font-size: 22px;
+    font-size: 20px;
     line-height: 1.15;
     font-weight: 900;
 }
@@ -125,41 +212,72 @@ textarea:focus-visible {
 .support-header p {
     margin: 4px 0 0;
     color: var(--muted);
-    font-size: 13px;
-    font-weight: 600;
+    font-size: 12px;
+    font-weight: 650;
 }
 
-.status {
-    min-height: 34px;
+.header-actions {
+    display: flex;
+    align-items: flex-end;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.status,
+.close-chat {
+    min-height: 32px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border: 1px solid rgba(8, 119, 255, .56);
     border-radius: 999px;
-    background: var(--blue-soft);
-    color: #dbe9ff;
-    padding: 6px 12px;
+    padding: 6px 11px;
     font-size: 12px;
     font-weight: 900;
     white-space: nowrap;
 }
 
-.messages {
-    overflow: auto;
-    padding: 22px;
+.status {
+    border: 1px solid rgba(32, 201, 151, .4);
+    background: rgba(32, 201, 151, .12);
+    color: #75f0c4;
 }
 
-.empty {
+.close-chat {
+    border: 1px solid var(--line);
+    background: #181b25;
+    color: #cfe0ff;
+}
+
+.messages {
+    overflow: auto;
+    padding: 18px;
+}
+
+.welcome {
+    display: grid;
+    gap: 8px;
+    margin: 22px 0;
+    border: 1px solid var(--line);
+    border-radius: 18px;
+    background: #151820;
+    padding: 18px;
+}
+
+.welcome strong {
+    font-size: 18px;
+    font-weight: 900;
+}
+
+.welcome span {
     color: var(--muted);
-    text-align: center;
-    margin-top: 18vh;
-    font-weight: 700;
+    line-height: 1.5;
+    font-weight: 650;
 }
 
 .message {
-    max-width: min(650px, 84%);
+    max-width: 86%;
     margin: 0 0 14px;
-    padding: 13px 15px;
+    padding: 12px 14px;
     border-radius: 18px;
     background: var(--visitor);
     border: 1px solid var(--line);
@@ -173,19 +291,12 @@ textarea:focus-visible {
 }
 
 .message.system {
-    max-width: min(520px, 80%);
+    max-width: 88%;
     margin-left: auto;
     margin-right: auto;
     background: #151820;
     color: var(--muted);
     text-align: center;
-}
-
-.message-meta {
-    margin-bottom: 6px;
-    color: var(--muted);
-    font-size: 12px;
-    font-weight: 800;
 }
 
 .message-body {
@@ -195,24 +306,32 @@ textarea:focus-visible {
     line-height: 1.48;
 }
 
+.message-meta {
+    margin-top: 6px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 800;
+}
+
 .composer {
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 12px;
-    padding: 16px;
+    gap: 10px;
+    padding: 14px;
     border-top: 1px solid var(--line);
     background: rgba(18, 20, 27, .9);
 }
 
 .composer textarea {
     width: 100%;
-    min-height: 58px;
+    min-height: 54px;
+    max-height: 138px;
     resize: none;
     border: 1px solid var(--line);
-    border-radius: 14px;
+    border-radius: 16px;
     background: #1a1d27;
-    color: #c6d8f5;
-    padding: 14px 16px;
+    color: #dbe9ff;
+    padding: 14px;
     outline: none;
     line-height: 1.4;
     transition: border-color .2s, background .2s, box-shadow .2s, color .2s;
@@ -226,11 +345,11 @@ textarea:focus-visible {
 }
 
 .composer button {
-    min-height: 58px;
-    border-radius: 14px;
+    min-height: 54px;
+    border-radius: 16px;
     background: var(--blue);
     color: #fff;
-    padding: 0 20px;
+    padding: 0 16px;
     font-weight: 900;
     box-shadow: 0 10px 26px rgba(8, 119, 255, .22);
     transition: background .2s, transform .2s, box-shadow .2s;
@@ -251,20 +370,28 @@ textarea:focus-visible {
 
 @media (max-width: 700px) {
     .support-shell {
-        padding: 8px;
-        place-items: stretch;
+        padding: 20px;
+    }
+
+    .support-stage {
+        padding-top: 6vh;
     }
 
     .support-panel {
+        inset: 0;
         width: 100%;
-        height: calc(100vh - 16px);
+        height: 100%;
         min-height: 0;
-        border-radius: 18px;
+        border-radius: 0;
+    }
+
+    .launcher {
+        right: 16px;
+        bottom: 16px;
     }
 
     .support-header {
         align-items: flex-start;
-        flex-direction: column;
     }
 
     .support-brand {
@@ -274,7 +401,7 @@ textarea:focus-visible {
     }
 
     .message {
-        max-width: 88%;
+        max-width: 90%;
     }
 
     .composer {

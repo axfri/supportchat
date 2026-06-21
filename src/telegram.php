@@ -26,8 +26,9 @@ function support_chat_telegram_request(string $method, array $payload): array
 
     // Try to get HTTP status from response headers if available
     $httpStatus = null;
-    if (isset($http_response_header) && is_array($http_response_header) && count($http_response_header) > 0) {
-        if (preg_match('#HTTP/\d(?:\.\d)?\s+(\d{3})#', $http_response_header[0], $m)) {
+    $headers = function_exists('http_get_last_response_headers') ? http_get_last_response_headers() : ($http_response_header ?? []);
+    if (is_array($headers) && count($headers) > 0) {
+        if (preg_match('#HTTP/\d(?:\.\d)?\s+(\d{3})#', $headers[0], $m)) {
             $httpStatus = (int)$m[1];
         }
     }

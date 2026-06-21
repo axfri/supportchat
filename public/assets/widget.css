@@ -1,0 +1,329 @@
+.fscw-launcher,
+.fscw-panel,
+.fscw-panel * {
+    box-sizing: border-box;
+}
+
+.fscw-launcher,
+.fscw-panel {
+    font-family: Manrope, Inter, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
+.fscw-launcher {
+    position: fixed;
+    right: 22px;
+    bottom: 22px;
+    z-index: 2147483000;
+    min-width: 118px;
+    min-height: 56px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    border: 0;
+    border-radius: 999px;
+    background: #0877ff;
+    color: #fff;
+    padding: 0 21px;
+    font-size: 15px;
+    font-weight: 900;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 18px 45px rgba(8, 119, 255, .34);
+    transition: transform .2s, background .2s, opacity .2s;
+}
+
+.fscw-launcher:hover {
+    background: #0f6fff;
+    transform: translateY(-2px);
+}
+
+.fscw-launcher.is-hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(12px);
+}
+
+.fscw-launcher-count {
+    min-width: 23px;
+    min-height: 23px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: #ff5360;
+    color: #fff;
+    font-size: 12px;
+}
+
+.fscw-launcher-count:not(:empty) {
+    display: inline-flex;
+}
+
+.fscw-panel {
+    position: fixed;
+    right: 22px;
+    bottom: 22px;
+    z-index: 2147483001;
+    width: min(420px, calc(100vw - 32px));
+    height: min(680px, calc(100vh - 44px));
+    min-height: 520px;
+    display: grid;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    overflow: hidden;
+    border: 1px solid #242936;
+    border-radius: 24px;
+    background: rgba(18, 20, 27, .97);
+    color: #f5f7fb;
+    box-shadow: 0 24px 70px rgba(0, 0, 0, .38);
+    opacity: 0;
+    pointer-events: none;
+    transform: translateY(18px) scale(.98);
+    transition: opacity .2s, transform .2s;
+}
+
+.fscw-panel.is-open {
+    opacity: 1;
+    pointer-events: auto;
+    transform: translateY(0) scale(1);
+}
+
+.fscw-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 18px;
+    border-bottom: 1px solid #242936;
+    background: rgba(18, 20, 27, .9);
+}
+
+.fscw-brand {
+    min-width: 0;
+}
+
+.fscw-logo {
+    display: inline-flex;
+    align-items: baseline;
+    margin-bottom: 7px;
+    font-size: 22px;
+    font-weight: 900;
+    line-height: 1;
+    white-space: nowrap;
+}
+
+.fscw-logo b {
+    color: #0877ff;
+    font-size: 1.34em;
+}
+
+.fscw-logo strong,
+.fscw-logo small {
+    color: #f7f8fb;
+}
+
+.fscw-logo small {
+    margin-left: 2px;
+    font-size: .56em;
+}
+
+.fscw-title {
+    margin: 0;
+    color: #f5f7fb;
+    font-size: 20px;
+    font-weight: 900;
+    line-height: 1.15;
+}
+
+.fscw-subtitle {
+    margin: 4px 0 0;
+    color: #90a1bd;
+    font-size: 12px;
+    font-weight: 650;
+    line-height: 1.35;
+}
+
+.fscw-actions {
+    display: flex;
+    align-items: flex-end;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.fscw-status,
+.fscw-close {
+    min-height: 32px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    padding: 6px 11px;
+    font-size: 12px;
+    font-weight: 900;
+    white-space: nowrap;
+}
+
+.fscw-status {
+    border: 1px solid rgba(32, 201, 151, .4);
+    background: rgba(32, 201, 151, .12);
+    color: #75f0c4;
+}
+
+.fscw-close {
+    border: 1px solid #242936;
+    background: #181b25;
+    color: #cfe0ff;
+    cursor: pointer;
+}
+
+.fscw-messages {
+    min-height: 0;
+    overflow: auto;
+    padding: 18px;
+}
+
+.fscw-welcome {
+    display: grid;
+    gap: 8px;
+    margin: 22px 0;
+    border: 1px solid #242936;
+    border-radius: 18px;
+    background: #151820;
+    padding: 18px;
+}
+
+.fscw-welcome strong {
+    color: #fff;
+    font-size: 18px;
+    font-weight: 900;
+}
+
+.fscw-welcome span {
+    color: #90a1bd;
+    line-height: 1.5;
+    font-weight: 650;
+}
+
+.fscw-message {
+    max-width: 86%;
+    margin: 0 0 14px;
+    padding: 12px 14px;
+    border: 1px solid #242936;
+    border-radius: 18px;
+    background: #171a23;
+    color: #f5f7fb;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, .12);
+}
+
+.fscw-message.is-support {
+    margin-left: auto;
+    border-color: rgba(8, 119, 255, .42);
+    background: #10213d;
+}
+
+.fscw-message.is-system {
+    max-width: 88%;
+    margin-left: auto;
+    margin-right: auto;
+    color: #90a1bd;
+    text-align: center;
+}
+
+.fscw-body {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: #f5f7fb;
+    font-size: 14px;
+    line-height: 1.48;
+}
+
+.fscw-meta {
+    margin-top: 6px;
+    color: #90a1bd;
+    font-size: 11px;
+    font-weight: 800;
+}
+
+.fscw-composer {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+    padding: 14px;
+    border-top: 1px solid #242936;
+    background: rgba(18, 20, 27, .92);
+}
+
+.fscw-input {
+    width: 100%;
+    min-height: 54px;
+    max-height: 138px;
+    resize: none;
+    border: 1px solid #242936;
+    border-radius: 16px;
+    background: #1a1d27;
+    color: #dbe9ff;
+    padding: 14px;
+    outline: none;
+    font: inherit;
+    line-height: 1.4;
+}
+
+.fscw-input:focus {
+    border-color: #0877ff;
+    background: #172235;
+    color: #fff;
+    box-shadow: 0 0 0 2px rgba(8, 119, 255, .16) inset;
+}
+
+.fscw-send {
+    min-height: 54px;
+    border: 0;
+    border-radius: 16px;
+    background: #0877ff;
+    color: #fff;
+    padding: 0 16px;
+    font-weight: 900;
+    cursor: pointer;
+    box-shadow: 0 10px 26px rgba(8, 119, 255, .22);
+}
+
+.fscw-send:hover {
+    background: #0f6fff;
+}
+
+.fscw-send:disabled,
+.fscw-input:disabled {
+    opacity: .6;
+    cursor: not-allowed;
+}
+
+@media (max-width: 700px) {
+    .fscw-panel {
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        min-height: 0;
+        border-radius: 0;
+    }
+
+    .fscw-launcher {
+        right: 16px;
+        bottom: 16px;
+    }
+
+    .fscw-header {
+        align-items: flex-start;
+    }
+
+    .fscw-message {
+        max-width: 90%;
+    }
+
+    .fscw-composer {
+        grid-template-columns: 1fr;
+    }
+
+    .fscw-send {
+        min-height: 50px;
+    }
+}
