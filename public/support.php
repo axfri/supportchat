@@ -4,6 +4,18 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Поддержка - F-ART.bot</title>
+    <script>
+        (function() {
+            try {
+                const themeKey = 'support_theme';
+                const savedTheme = localStorage.getItem(themeKey);
+                const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+                document.documentElement.dataset.theme = savedTheme || (prefersDark ? 'dark' : 'light');
+            } catch (err) {
+                // ignore localStorage access errors
+            }
+        })();
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
@@ -33,6 +45,7 @@
                 </div>
                 <div class="header-actions">
                     <span class="status" id="status">online</span>
+                    <button class="theme-toggle" id="themeToggle" type="button" aria-label="Переключить тему">🌙</button>
                     <button class="close-chat" id="closeChat" type="button" aria-label="Свернуть чат">Свернуть</button>
                 </div>
             </header>

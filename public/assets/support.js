@@ -12,8 +12,64 @@
     const attachButton = document.getElementById('attachButton');
     const filePreview = document.getElementById('filePreview');
     const sendButton = composer.querySelector('.submit-button');
+    const themeToggle = document.getElementById('themeToggle');
+    const THEME_STORAGE_KEY = 'support_theme';
+    const THEMES = {
+        LIGHT: 'light',
+        DARK: 'dark',
+    };
 
     let messageSignature = '';
+
+    function getSavedTheme() {
+        return localStorage.getItem(THEME_STORAGE_KEY);
+    }
+
+    function getSystemTheme() {
+        return window.matchMedia('(prefers-color-scheme: dark)').matches ? THEMES.DARK : THEMES.LIGHT;
+    }
+
+    function updateThemeToggleButton(theme) {
+        if (!themeToggle) return;
+        const isDark = theme === THEMES.DARK;
+        themeToggle.textContent = isDark ? '☀️' : '🌙';
+        themeToggle.title = isDark ? 'Светлая тема' : 'Тёмная тема';
+        themeToggle.setAttribute('aria-label', isDark ? 'Переключить на светлую тему' : 'Переключить на тёмную тему');
+        themeToggle.setAttribute('aria-pressed', String(isDark));
+    }
+
+    function applyTheme(theme, persist = true) {
+        if (![THEMES.LIGHT, THEMES.DARK].includes(theme)) {
+            theme = THEMES.LIGHT;
+        }
+
+        document.documentElement.dataset.theme = theme;
+        updateThemeToggleButton(theme);
+
+        if (persist) {
+            localStorage.setItem(THEME_STORAGE_KEY, theme);
+        }
+    }
+
+    function initTheme() {
+        const savedTheme = getSavedTheme();
+        const theme = savedTheme || getSystemTheme();
+        applyTheme(theme, Boolean(savedTheme));
+
+        if (!savedTheme && window.matchMedia) {
+            const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+            const handleSystemChange = (event) => {
+                applyTheme(event.matches ? THEMES.DARK : THEMES.LIGHT, false);
+            };
+
+            if (typeof mediaQuery.addEventListener === 'function') {
+                mediaQuery.addEventListener('change', handleSystemChange);
+            } else if (typeof mediaQuery.addListener === 'function') {
+                mediaQuery.addListener(handleSystemChange);
+            }
+        }
+    }
+
     let lastSupportCount = 0;
     let sending = false;
     let selectedFiles = [];
@@ -267,6 +323,13 @@
     launcher.addEventListener('click', () => setOpen(true));
     closeChat.addEventListener('click', () => setOpen(false));
 
+    if (themeToggle) {
+        themeToggle.addEventListener('click', () => {
+            const currentTheme = document.documentElement.dataset.theme || THEMES.LIGHT;
+            applyTheme(currentTheme === THEMES.DARK ? THEMES.LIGHT : THEMES.DARK);
+        });
+    }
+
     attachButton.addEventListener('click', (e) => {
         e.preventDefault();
         fileInput.click();
@@ -294,6 +357,7 @@
         sendMessage(body);
     });
 
+    initTheme();
     setInterval(loadMessages, 2500);
     loadMessages();
     autosize();
