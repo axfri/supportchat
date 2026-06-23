@@ -117,6 +117,58 @@ textarea {
     margin-bottom: 5px;
     color: var(--muted);
     font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.message-deleted {
+    opacity: 0.6;
+    background-color: #f0f0f0 !important;
+    border-color: #d0d0d0 !important;
+}
+
+.delete-message-btn {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 0 4px;
+    font-size: 12px;
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+}
+
+.delete-message-btn:hover {
+    color: var(--accent);
+}
+
+.delete-message-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.error-message {
+    padding: 12px;
+    margin: 8px 0;
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 4px;
+    color: #856404;
+    font-size: 13px;
+    animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
 }
 
 .message-body {

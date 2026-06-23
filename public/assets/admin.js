@@ -181,6 +181,19 @@
         }).join('') + '</div>';
     }
 
+    function showError(errorMessage) {
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'admin-error-message';
+        errorDiv.textContent = '⚠ ' + errorMessage;
+        messages.parentElement.insertBefore(errorDiv, messages);
+        
+        setTimeout(() => {
+            if (errorDiv.parentElement) {
+                errorDiv.remove();
+            }
+        }, 6000);
+    }
+
     function renderConversations() {
         if (!token) {
             conversationList.innerHTML = '<div class="empty">Введите ключ доступа</div>';
@@ -270,7 +283,7 @@
     }
 
     function renderMessages(items) {
-        const signature = JSON.stringify(items.map((message) => [message.id, message.sender, message.body, (message.attachments || []).map(a => a.id).join(',')]));
+        const signature = JSON.stringify(items.map((message) => [message.id, message.sender, message.body, (message.attachments || []).map(a => a.id).join(','), message.is_deleted_by_visitor]));
         if (signature === messageSignature) {
             return;
         }
@@ -287,12 +300,13 @@
             const divider = day && day !== lastDay ? `<div class="day-divider">${escapeHtml(formatDate(message.created_at).split(',')[0] || day)}</div>` : '';
             lastDay = day || lastDay;
             const author = message.sender === 'support' ? 'Оператор' : message.sender === 'system' ? 'Система' : 'Клиент';
+            const isDeleted = message.is_deleted_by_visitor;
             return `
                 ${divider}
-                <article class="message ${message.sender}">
-                    <div class="message-meta">${author} · ${escapeHtml(formatDate(message.created_at))}</div>
-                    <div class="message-body">${escapeHtml(message.body)}</div>
-                    ${renderAttachments(message.attachments || [])}
+                <article class="message ${message.sender}${isDeleted ? ' message-deleted' : ''}">
+                    <div class="message-meta">${author} · ${escapeHtml(formatDate(message.created_at))}${isDeleted ? ' (удалено клиентом)' : ''}</div>
+                    <div class="message-body">${isDeleted ? '<em>Сообщение удалено</em>' : escapeHtml(message.body)}</div>
+                    ${!isDeleted ? renderAttachments(message.attachments || []) : ''}
                 </article>
             `;
         }).join('');

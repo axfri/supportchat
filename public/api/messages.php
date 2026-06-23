@@ -30,9 +30,21 @@ if ($method === 'GET') {
     $stmt->execute([$conversationId]);
     $messages = $stmt->fetchAll();
 
-    // Add attachments to each message
+    // Add attachments and format deleted status for each message
     foreach ($messages as &$message) {
         $message['attachments'] = support_chat_get_attachments($pdo, (int)$message['id']);
+        $message['is_deleted_by_visitor'] = (bool)$message['is_deleted_by_visitor'];
+        
+        // For visitors, completely remove deleted messages
+        if (!$isAdmin && $message['is_deleted_by_visitor']) {
+            $message = null;
+        }
+    }
+    
+    // Filter out null entries for visitors
+    if (!$isAdmin) {
+        $messages = array_filter($messages, fn($m) => $m !== null);
+        $messages = array_values($messages); // Re-index array
     }
 
     try {

@@ -132,14 +132,68 @@
             return;
         }
 
-        messages.innerHTML = items.map((message) => `
-            <article class="message ${message.sender}">
-                <div class="message-body">${escapeHtml(message.body)}</div>
-                ${renderAttachments(message.attachments || [])}
-                <div class="message-meta">${message.sender === 'support' ? 'Поддержка' : message.sender === 'system' ? 'Система' : 'Вы'} · ${escapeHtml(formatDate(message.created_at))}</div>
+        messages.innerHTML = items.map((message) => {
+            const isDeleted = message.is_deleted_by_visitor;
+            const isSender = message.sender === 'visitor';
+            return `
+            <article class="message ${message.sender}${isDeleted ? ' message-deleted' : ''}">
+                <div class="message-body">${isDeleted ? '<em>Сообщение удалено</em>' : escapeHtml(message.body)}</div>
+                ${!isDeleted ? renderAttachments(message.attachments || []) : ''}
+                <div class="message-meta">
+                    ${message.sender === 'support' ? 'Поддержка' : message.sender === 'system' ? 'Система' : 'Вы'} · ${escapeHtml(formatDate(message.created_at))}
+                    ${isSender && !isDeleted ? `<button class="delete-message-btn" data-message-id="${message.id}" title="Удалить сообщение">✕</button>` : ''}
+                </div>
             </article>
-        `).join('');
+        `;
+        }).join('');
         messages.scrollTop = messages.scrollHeight;
+
+        // Add delete event listeners
+        messages.querySelectorAll('.delete-message-btn').forEach(btn => {
+            btn.addEventListener('click', async (e) => {
+                e.preventDefault();
+                const messageId = parseInt(btn.dataset.messageId);
+                await deleteMessage(messageId, btn);
+            });
+        });
+    }
+
+    async function deleteMessage(messageId, btn) {
+        try {
+            btn.disabled = true;
+            btn.textContent = '...';
+            
+            const res = await fetch('api/delete_message.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ message_id: messageId }),
+            });
+            const data = await res.json();
+            
+            if (!data.ok) {
+                showError(data.error || 'Ошибка удаления сообщения');
+                btn.disabled = false;
+                btn.textContent = '✕';
+                return;
+            }
+            
+            await loadMessages();
+        } catch (err) {
+            showError(err.message || 'Ошибка сети при удалении');
+            btn.disabled = false;
+            btn.textContent = '✕';
+        }
+    }
+
+    function showError(message) {
+        const errorDiv = document.createElement('div');
+        errorDiv.className = 'error-message';
+        errorDiv.textContent = '⚠ ' + message;
+        messages.parentElement.insertBefore(errorDiv, messages);
+        
+        setTimeout(() => {
+            errorDiv.remove();
+        }, 5000);
     }
 
     function applyConversationState(conversation) {

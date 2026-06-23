@@ -50,10 +50,28 @@ function support_chat_migrate(PDO $pdo): void
             sender TEXT NOT NULL CHECK(sender IN ('visitor', 'support', 'system')),
             body TEXT NOT NULL,
             telegram_message_id TEXT,
+            is_deleted_by_visitor INTEGER NOT NULL DEFAULT 0,
+            deleted_at TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
         )
     ");
+
+    // Add columns to existing table if they don't exist
+    try {
+        $pdo->exec('PRAGMA table_info(messages)');
+        $columns = $pdo->query('PRAGMA table_info(messages)')->fetchAll();
+        $columnNames = array_map(fn($c) => $c['name'], $columns);
+        
+        if (!in_array('is_deleted_by_visitor', $columnNames)) {
+            $pdo->exec('ALTER TABLE messages ADD COLUMN is_deleted_by_visitor INTEGER NOT NULL DEFAULT 0');
+        }
+        if (!in_array('deleted_at', $columnNames)) {
+            $pdo->exec('ALTER TABLE messages ADD COLUMN deleted_at TEXT');
+        }
+    } catch (Throwable $e) {
+        // Columns might already exist
+    }
 
     $pdo->exec("
         CREATE TABLE IF NOT EXISTS attachments (
@@ -350,4 +368,38 @@ function support_chat_get_attachments(PDO $pdo, int $messageId): array
 function support_chat_get_attachment_path(string $filename): string
 {
     return support_chat_base_path('storage' . DIRECTORY_SEPARATOR . 'attachments' . DIRECTORY_SEPARATOR . $filename);
+}
+
+function support_chat_delete_message_by_visitor(PDO $pdo, int $messageId, string $visitorSessionId): bool
+{
+    // Verify the message belongs to a web conversation of this visitor
+    $stmt = $pdo->prepare('
+        SELECT m.id, m.sender, c.channel, c.external_id 
+        FROM messages m 
+        JOIN conversations c ON m.conversation_id = c.id 
+        WHERE m.id = ? LIMIT 1
+    ');
+    $stmt->execute([$messageId]);
+    $message = $stmt->fetch();
+
+    if (!$message) {
+        throw new InvalidArgumentException('Message not found');
+    }
+
+    // Only visitors can delete their own messages from web channel
+    if ($message['channel'] !== 'web' || $message['external_id'] !== $visitorSessionId || $message['sender'] !== 'visitor') {
+        throw new InvalidArgumentException('Unauthorized');
+    }
+
+    // Mark message as deleted by visitor
+    $stmt = $pdo->prepare('UPDATE messages SET is_deleted_by_visitor = 1, deleted_at = CURRENT_TIMESTAMP WHERE id = ?');
+    return $stmt->execute([$messageId]);
+}
+
+function support_chat_get_message(PDO $pdo, int $messageId): ?array
+{
+    $stmt = $pdo->prepare('SELECT * FROM messages WHERE id = ? LIMIT 1');
+    $stmt->execute([$messageId]);
+    $message = $stmt->fetch();
+    return is_array($message) ? $message : null;
 }

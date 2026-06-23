@@ -503,6 +503,39 @@ textarea:focus-visible {
     font-weight: 850;
 }
 
+.message-deleted {
+    opacity: 0.5;
+    background: rgba(80, 80, 90, .3) !important;
+    border-color: rgba(80, 80, 90, .4) !important;
+}
+
+.message-deleted .message-body {
+    color: var(--muted);
+    font-style: italic;
+}
+
+.admin-error-message {
+    padding: 12px 16px;
+    margin: 8px 0;
+    background: rgba(255, 107, 107, 0.1);
+    border: 1px solid rgba(255, 107, 107, 0.3);
+    border-radius: 4px;
+    color: #ff6b6b;
+    font-size: 13px;
+    animation: slideIn 0.3s ease;
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
 .message-body {
     white-space: pre-wrap;
     overflow-wrap: anywhere;
