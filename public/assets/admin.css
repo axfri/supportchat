@@ -543,7 +543,7 @@ textarea:focus-visible {
 
 .composer {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
+    grid-template-columns: 1fr;
     gap: 12px;
     padding: 14px 16px 16px;
     background: rgba(18, 20, 27, .9);
@@ -555,6 +555,126 @@ textarea:focus-visible {
     resize: none;
     padding: 14px 16px;
     line-height: 1.4;
+}
+
+.composer-actions {
+    display: flex;
+    gap: 12px;
+}
+
+.icon-button {
+    border: 1px solid var(--line2);
+    border-radius: 8px;
+    background: rgba(24, 26, 32, .8);
+    color: var(--text);
+    padding: 14px 16px;
+    cursor: pointer;
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 46px;
+}
+
+.icon-button:hover:not(:disabled) {
+    background: rgba(30, 32, 40, .9);
+}
+
+.icon-button:disabled,
+.submit-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.submit-button {
+    border: 0;
+    border-radius: 8px;
+    background: var(--blue);
+    color: #fff;
+    padding: 14px 16px;
+    cursor: pointer;
+    flex: 1;
+    font-weight: 600;
+}
+
+.submit-button:hover:not(:disabled) {
+    background: var(--blue2);
+}
+
+.file-preview {
+    display: grid;
+    gap: 8px;
+    max-height: 150px;
+    overflow-y: auto;
+}
+
+.file-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: rgba(24, 26, 32, .5);
+    border-radius: 4px;
+    border: 1px solid var(--line2);
+}
+
+.file-name {
+    flex: 1;
+    word-break: break-all;
+    font-size: 13px;
+    color: var(--text);
+}
+
+.file-size {
+    color: var(--muted);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
+.remove-file {
+    border: 0;
+    background: transparent;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 0 4px;
+    font-size: 14px;
+}
+
+.remove-file:hover {
+    color: var(--text);
+}
+
+.attachments {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.attachment-image {
+    display: inline-block;
+    max-width: 200px;
+}
+
+.attachment-image img {
+    max-width: 100%;
+    height: auto;
+    display: block;
+}
+
+.attachment-file {
+    display: inline-block;
+    padding: 8px 12px;
+    background: rgba(24, 26, 32, .5);
+    border-radius: 4px;
+    color: var(--blue);
+    text-decoration: none;
+    font-size: 13px;
+    border: 1px solid var(--line2);
+}
+
+.attachment-file:hover {
+    background: rgba(24, 26, 32, .8);
 }
 
 .details {
@@ -679,6 +799,14 @@ textarea:focus-visible {
 
     .composer {
         grid-template-columns: 1fr;
+    }
+
+    .composer-actions {
+        width: 100%;
+    }
+
+    .submit-button {
+        min-height: 42px;
     }
 }
 

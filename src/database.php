@@ -55,8 +55,22 @@ function support_chat_migrate(PDO $pdo): void
         )
     ");
 
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS attachments (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            message_id INTEGER NOT NULL,
+            filename TEXT NOT NULL,
+            original_filename TEXT NOT NULL,
+            mime_type TEXT NOT NULL,
+            file_size INTEGER NOT NULL,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(message_id) REFERENCES messages(id) ON DELETE CASCADE
+        )
+    ");
+
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id, id)');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at DESC)');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_attachments_message ON attachments(message_id)');
     $pdo->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_telegram_unique ON messages(conversation_id, telegram_message_id) WHERE telegram_message_id IS NOT NULL AND telegram_message_id != ''");
 }
 
@@ -255,4 +269,85 @@ function support_chat_ingest_telegram_message(PDO $pdo, array $message): ?int
     }
 
     return support_chat_add_message($pdo, $conversationId, 'visitor', $text, $telegramMessageId);
+}
+
+function support_chat_allowed_file_types(): array
+{
+    return [
+        // Images
+        'jpg' => 'image/jpeg',
+        'jpeg' => 'image/jpeg',
+        'png' => 'image/png',
+        'gif' => 'image/gif',
+        'webp' => 'image/webp',
+        'bmp' => 'image/bmp',
+        // Videos
+        'mp4' => 'video/mp4',
+        'webm' => 'video/webm',
+        'mov' => 'video/quicktime',
+        'mkv' => 'video/x-matroska',
+        'avi' => 'video/x-msvideo',
+        // Archives
+        'zip' => 'application/zip',
+        'rar' => 'application/x-rar-compressed',
+        '7z' => 'application/x-7z-compressed',
+        'tar' => 'application/x-tar',
+        'gz' => 'application/gzip',
+        'tgz' => 'application/gzip',
+    ];
+}
+
+function support_chat_validate_file(string $filename, string $mimeType, int $fileSize): array
+{
+    $allowed = support_chat_allowed_file_types();
+    $maxSize = 50 * 1024 * 1024; // 50 MB
+
+    if ($fileSize > $maxSize) {
+        return ['valid' => false, 'error' => 'Размер файла не может быть больше 50 МБ'];
+    }
+
+    if ($fileSize < 1) {
+        return ['valid' => false, 'error' => 'Файл не может быть пустым'];
+    }
+
+    $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+    if (!isset($allowed[$ext])) {
+        return ['valid' => false, 'error' => 'Формат файла не поддерживается'];
+    }
+
+    return ['valid' => true];
+}
+
+function support_chat_store_attachment(PDO $pdo, int $messageId, string $sourceFilePath, string $originalFilename, string $mimeType): int
+{
+    $ext = strtolower(pathinfo($originalFilename, PATHINFO_EXTENSION));
+    $filename = bin2hex(random_bytes(16)) . '.' . $ext;
+    
+    $storagePath = support_chat_base_path('storage' . DIRECTORY_SEPARATOR . 'attachments');
+    if (!is_dir($storagePath)) {
+        mkdir($storagePath, 0775, true);
+    }
+
+    $targetPath = $storagePath . DIRECTORY_SEPARATOR . $filename;
+    if (!move_uploaded_file($sourceFilePath, $targetPath)) {
+        throw new RuntimeException('Failed to store attachment');
+    }
+
+    $fileSize = filesize($targetPath) ?: 0;
+    $stmt = $pdo->prepare('INSERT INTO attachments (message_id, filename, original_filename, mime_type, file_size) VALUES (?, ?, ?, ?, ?)');
+    $stmt->execute([$messageId, $filename, $originalFilename, $mimeType, $fileSize]);
+
+    return (int)$pdo->lastInsertId();
+}
+
+function support_chat_get_attachments(PDO $pdo, int $messageId): array
+{
+    $stmt = $pdo->prepare('SELECT * FROM attachments WHERE message_id = ? ORDER BY id ASC');
+    $stmt->execute([$messageId]);
+    return $stmt->fetchAll();
+}
+
+function support_chat_get_attachment_path(string $filename): string
+{
+    return support_chat_base_path('storage' . DIRECTORY_SEPARATOR . 'attachments' . DIRECTORY_SEPARATOR . $filename);
 }

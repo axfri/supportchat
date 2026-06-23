@@ -8,11 +8,15 @@
     const messageInput = document.getElementById('messageInput');
     const status = document.getElementById('status');
     const subtitle = document.getElementById('subtitle');
-    const sendButton = composer.querySelector('button');
+    const fileInput = document.getElementById('fileInput');
+    const attachButton = document.getElementById('attachButton');
+    const filePreview = document.getElementById('filePreview');
+    const sendButton = composer.querySelector('.submit-button');
 
     let messageSignature = '';
     let lastSupportCount = 0;
     let sending = false;
+    let selectedFiles = [];
 
     function escapeHtml(value) {
         return String(value || '')
@@ -31,6 +35,13 @@
         return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
     }
 
+    function formatFileSize(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+        if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+        return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+    }
+
     function autosize() {
         messageInput.style.height = 'auto';
         messageInput.style.height = Math.min(messageInput.scrollHeight, 138) + 'px';
@@ -46,8 +57,60 @@
         }
     }
 
+    function updateFilePreview() {
+        if (selectedFiles.length === 0) {
+            filePreview.style.display = 'none';
+            filePreview.innerHTML = '';
+            return;
+        }
+
+        filePreview.innerHTML = selectedFiles.map((file, i) => `
+            <div class="file-item">
+                <span class="file-name">${escapeHtml(file.name)}</span>
+                <span class="file-size">${formatFileSize(file.size)}</span>
+                <button type="button" class="remove-file" data-index="${i}" title="Удалить">✕</button>
+            </div>
+        `).join('');
+
+        filePreview.style.display = 'block';
+
+        filePreview.querySelectorAll('.remove-file').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                const idx = parseInt(btn.dataset.index);
+                selectedFiles.splice(idx, 1);
+                updateFilePreview();
+            });
+        });
+    }
+
+    function renderAttachments(attachments) {
+        if (!attachments || attachments.length === 0) return '';
+
+        return '<div class="attachments">' + attachments.map((att) => {
+            const ext = att.original_filename.split('.').pop().toLowerCase();
+            const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext);
+            const isVideo = ['mp4', 'webm', 'mov', 'mkv', 'avi'].includes(ext);
+
+            if (isImage) {
+                return `<a href="api/download.php?id=${att.id}" class="attachment-image" title="${escapeHtml(att.original_filename)}" target="_blank">
+                    <img src="api/download.php?id=${att.id}" alt="${escapeHtml(att.original_filename)}" style="max-width: 200px; max-height: 200px; border-radius: 4px;">
+                </a>`;
+            } else if (isVideo) {
+                return `<video controls style="max-width: 300px; max-height: 200px; border-radius: 4px;" title="${escapeHtml(att.original_filename)}">
+                    <source src="api/download.php?id=${att.id}" type="${att.mime_type}">
+                    Видео не поддерживается
+                </video>`;
+            } else {
+                return `<a href="api/download.php?id=${att.id}" class="attachment-file" download="${escapeHtml(att.original_filename)}" title="${escapeHtml(att.original_filename)}">
+                    📎 ${escapeHtml(att.original_filename)} (${formatFileSize(att.file_size)})
+                </a>`;
+            }
+        }).join('') + '</div>';
+    }
+
     function render(items) {
-        const signature = JSON.stringify(items.map((message) => [message.id, message.sender, message.body]));
+        const signature = JSON.stringify(items.map((message) => [message.id, message.sender, message.body, (message.attachments || []).map(a => a.id).join(',')]));
         if (signature === messageSignature) {
             return;
         }
@@ -72,6 +135,7 @@
         messages.innerHTML = items.map((message) => `
             <article class="message ${message.sender}">
                 <div class="message-body">${escapeHtml(message.body)}</div>
+                ${renderAttachments(message.attachments || [])}
                 <div class="message-meta">${message.sender === 'support' ? 'Поддержка' : message.sender === 'system' ? 'Система' : 'Вы'} · ${escapeHtml(formatDate(message.created_at))}</div>
             </article>
         `).join('');
@@ -112,18 +176,26 @@
         sending = true;
         sendButton.disabled = true;
         messageInput.disabled = true;
+        attachButton.disabled = true;
         sendButton.textContent = 'Отправка';
         try {
+            const formData = new FormData();
+            formData.append('body', body);
+            for (const file of selectedFiles) {
+                formData.append('files[]', file);
+            }
+
             const res = await fetch('api/messages.php', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ body }),
+                body: formData,
             });
             const data = await res.json();
             if (!data.ok) {
                 throw new Error(data.error || 'Ошибка отправки');
             }
             messageInput.value = '';
+            selectedFiles = [];
+            updateFilePreview();
             autosize();
             await loadMessages();
         } catch (err) {
@@ -132,6 +204,7 @@
             sending = false;
             sendButton.disabled = false;
             messageInput.disabled = false;
+            attachButton.disabled = false;
             sendButton.textContent = 'Отправить';
             messageInput.focus();
         }
@@ -139,6 +212,16 @@
 
     launcher.addEventListener('click', () => setOpen(true));
     closeChat.addEventListener('click', () => setOpen(false));
+
+    attachButton.addEventListener('click', (e) => {
+        e.preventDefault();
+        fileInput.click();
+    });
+
+    fileInput.addEventListener('change', (e) => {
+        selectedFiles = Array.from(e.target.files || []);
+        updateFilePreview();
+    });
 
     messageInput.addEventListener('input', autosize);
     messageInput.addEventListener('keydown', (event) => {
@@ -151,7 +234,7 @@
     composer.addEventListener('submit', (event) => {
         event.preventDefault();
         const body = messageInput.value.trim();
-        if (!body) {
+        if (!body && selectedFiles.length === 0) {
             return;
         }
         sendMessage(body);

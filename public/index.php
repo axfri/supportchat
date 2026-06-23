@@ -74,7 +74,12 @@
 
             <form class="composer" id="composer">
                 <textarea id="messageInput" rows="2" placeholder="Ответить клиенту" disabled></textarea>
-                <button type="submit" id="sendButton" disabled>Отправить</button>
+                <div class="composer-actions">
+                    <input type="file" id="fileInput" multiple accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.mp4,.webm,.mov,.mkv,.avi,.zip,.rar,.7z,.tar,.gz,.tgz" style="display:none">
+                    <button type="button" id="attachButton" class="icon-button" title="Прикрепить файл" disabled>📎</button>
+                    <button type="submit" id="sendButton" disabled class="submit-button">Отправить</button>
+                </div>
+                <div class="file-preview" id="filePreview" style="display:none;"></div>
             </form>
         </section>
 

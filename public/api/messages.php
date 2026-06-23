@@ -28,6 +28,12 @@ if ($method === 'GET') {
 
     $stmt = $pdo->prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY id ASC LIMIT 500');
     $stmt->execute([$conversationId]);
+    $messages = $stmt->fetchAll();
+
+    // Add attachments to each message
+    foreach ($messages as &$message) {
+        $message['attachments'] = support_chat_get_attachments($pdo, (int)$message['id']);
+    }
 
     try {
         if ($isAdmin) {
@@ -45,16 +51,17 @@ if ($method === 'GET') {
         'ok' => true,
         'conversation_id' => $conversationId,
         'conversation' => $conversation,
-        'messages' => $stmt->fetchAll(),
+        'messages' => $messages,
     ]);
 }
 
 if ($method === 'POST') {
     $data = support_chat_input();
     $body = trim((string)($data['body'] ?? ''));
+    $hasFiles = !empty($_FILES['files']);
 
-    if ($body === '') {
-        support_chat_json(['ok' => false, 'error' => 'Message is empty'], 422);
+    if ($body === '' && !$hasFiles) {
+        support_chat_json(['ok' => false, 'error' => 'Message or file is required'], 422);
     }
 
     try {
@@ -72,10 +79,10 @@ if ($method === 'POST') {
                 support_chat_json(['ok' => false, 'error' => 'Conversation is closed'], 409);
             }
 
-            $messageId = support_chat_add_message($pdo, $conversationId, 'support', $body);
+            $messageId = support_chat_add_message($pdo, $conversationId, 'support', $body !== '' ? $body : '[файл]');
 
             if ($conv['channel'] === 'telegram' && $conv['external_id'] !== '') {
-                $res = support_chat_telegram_send((string)$conv['external_id'], $body);
+                $res = support_chat_telegram_send((string)$conv['external_id'], $body !== '' ? $body : '[файл загружен]');
                 if (empty($res['ok'])) {
                     $log = ['when' => date('c'), 'conversation_id' => $conversationId, 'telegram_response' => $res];
                     @file_put_contents(support_chat_base_path('storage' . DIRECTORY_SEPARATOR . 'telegram_errors.log'), json_encode($log, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND | LOCK_EX);
@@ -84,7 +91,42 @@ if ($method === 'POST') {
         } else {
             support_chat_rate_limit('web_message');
             $conversationId = support_chat_find_or_create_web_conversation($pdo, session_id());
-            $messageId = support_chat_add_message($pdo, $conversationId, 'visitor', $body);
+            $messageId = support_chat_add_message($pdo, $conversationId, 'visitor', $body !== '' ? $body : '[файл]');
+        }
+
+        // Handle file uploads
+        if ($hasFiles) {
+            $files = $_FILES['files'];
+            $filesToStore = [];
+
+            // Normalize single file upload
+            if (!is_array($files['name'])) {
+                $files = [
+                    'name' => [$files['name']],
+                    'type' => [$files['type']],
+                    'tmp_name' => [$files['tmp_name']],
+                    'error' => [$files['error']],
+                    'size' => [$files['size']],
+                ];
+            }
+
+            foreach ($files['name'] as $i => $name) {
+                if ($files['error'][$i] !== UPLOAD_ERR_OK) {
+                    continue;
+                }
+
+                $validation = support_chat_validate_file($name, $files['type'][$i], $files['size'][$i]);
+                if (!$validation['valid']) {
+                    continue;
+                }
+
+                try {
+                    support_chat_store_attachment($pdo, $messageId, $files['tmp_name'][$i], $name, $files['type'][$i]);
+                    $filesToStore[] = $name;
+                } catch (RuntimeException $e) {
+                    support_chat_log_error('Failed to store attachment: ' . $e->getMessage());
+                }
+            }
         }
     } catch (InvalidArgumentException $exception) {
         support_chat_json(['ok' => false, 'error' => $exception->getMessage()], 422);
