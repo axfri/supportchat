@@ -31,12 +31,10 @@ function support_chat_error(string $message, int $status = 500): void
 function support_chat_input(): array
 {
     $raw = file_get_contents('php://input') ?: '';
-    // Try to decode JSON; if invalid, return empty array (handlers should validate required fields)
     $data = json_decode($raw, true);
     if (json_last_error() !== JSON_ERROR_NONE) {
-        // Log malformed JSON for debugging
         if ($raw !== '') {
-            support_chat_log_error('Malformed JSON input: ' . $raw);
+            support_chat_log_error('Malformed JSON input, length: ' . strlen($raw));
         }
         return [];
     }
@@ -65,6 +63,11 @@ function support_chat_rate_limit(string $key, int $limit = 5, int $windowSeconds
 
 function support_chat_require_admin(): void
 {
+    support_chat_session_start();
+    if (!empty($_SESSION['support_admin_authenticated'])) {
+        return;
+    }
+
     $expected = support_chat_env('SUPPORT_ADMIN_TOKEN');
     if ($expected === '') {
         support_chat_error('Admin token is not configured', 500);
@@ -87,6 +90,58 @@ function support_chat_session_start(): void
 {
     if (session_status() !== PHP_SESSION_ACTIVE) {
         session_name('support_chat_sid');
+        session_set_cookie_params([
+            'lifetime' => 60 * 60 * 24 * 30,
+            'path' => '/',
+            'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ]);
         session_start();
     }
+}
+
+function support_chat_admin_credentials_valid(string $login, string $password): bool
+{
+    $login = trim($login);
+    $expectedLogin = support_chat_env('SUPPORT_ADMIN_LOGIN');
+    if ($expectedLogin === '') {
+        $expectedLogin = 'admin';
+    }
+
+    if (!hash_equals($expectedLogin, $login)) {
+        return false;
+    }
+
+    $hash = support_chat_env('SUPPORT_ADMIN_PASSWORD_HASH');
+    if ($hash !== '') {
+        return password_verify($password, $hash);
+    }
+
+    $plainPassword = support_chat_env('SUPPORT_ADMIN_PASSWORD');
+    if ($plainPassword === '') {
+        $plainPassword = support_chat_env('SUPPORT_ADMIN_TOKEN');
+    }
+
+    return $plainPassword !== '' && hash_equals($plainPassword, $password);
+}
+
+function support_chat_admin_login(string $login): void
+{
+    support_chat_session_start();
+    session_regenerate_id(true);
+    $_SESSION['support_admin_authenticated'] = true;
+    $_SESSION['support_admin_login'] = $login;
+}
+
+function support_chat_admin_logout(): void
+{
+    support_chat_session_start();
+    unset($_SESSION['support_admin_authenticated'], $_SESSION['support_admin_login']);
+}
+
+function support_chat_is_admin_authenticated(): bool
+{
+    support_chat_session_start();
+    return !empty($_SESSION['support_admin_authenticated']);
 }

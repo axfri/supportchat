@@ -40,6 +40,7 @@ if ($method === 'GET') {
     $stmt = $pdo->prepare("
         SELECT
             c.*,
+            m.id AS last_message_id,
             m.body AS last_message,
             m.sender AS last_sender,
             m.created_at AS last_message_at
@@ -53,7 +54,33 @@ if ($method === 'GET') {
     ");
     $stmt->execute($params);
 
-    support_chat_json(['ok' => true, 'conversations' => $stmt->fetchAll()]);
+    $rows = $stmt->fetchAll();
+    foreach ($rows as &$row) {
+        $body = trim((string)($row['last_message'] ?? ''));
+        $lastMessageId = (int)($row['last_message_id'] ?? 0);
+        if ($lastMessageId > 0 && ($body === '[файл]' || $body === 'Файл')) {
+            $attachmentStmt = $pdo->prepare('SELECT original_filename, mime_type FROM attachments WHERE message_id = ? ORDER BY id ASC LIMIT 2');
+            $attachmentStmt->execute([$lastMessageId]);
+            $attachments = $attachmentStmt->fetchAll();
+            if (count($attachments) > 1) {
+                $row['last_message'] = 'Файлы: ' . count($attachments);
+            } elseif ($attachments) {
+                $attachment = $attachments[0];
+                $mime = (string)($attachment['mime_type'] ?? '');
+                $name = (string)($attachment['original_filename'] ?? '');
+                if (strpos($mime, 'image/') === 0) {
+                    $row['last_message'] = 'Фото' . ($name !== '' ? ': ' . $name : '');
+                } elseif (strpos($mime, 'video/') === 0) {
+                    $row['last_message'] = 'Видео' . ($name !== '' ? ': ' . $name : '');
+                } else {
+                    $row['last_message'] = 'Файл' . ($name !== '' ? ': ' . $name : '');
+                }
+            }
+        }
+    }
+    unset($row);
+    $conversations = array_map('support_chat_admin_conversation_payload', $rows);
+    support_chat_json(['ok' => true, 'conversations' => $conversations]);
 }
 
 if ($method === 'POST') {
@@ -71,7 +98,7 @@ if ($method === 'POST') {
         support_chat_json(['ok' => false, 'error' => $exception->getMessage()], 422);
     }
 
-    support_chat_json(['ok' => true, 'conversation' => $conversation]);
+    support_chat_json(['ok' => true, 'conversation' => support_chat_admin_conversation_payload($conversation)]);
 }
 
 support_chat_json(['ok' => false, 'error' => 'Method not allowed'], 405);

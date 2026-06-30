@@ -32,7 +32,7 @@
     function updateThemeToggleButton(theme) {
         if (!themeToggle) return;
         const isDark = theme === THEMES.DARK;
-        themeToggle.textContent = isDark ? '☀️' : '🌙';
+        themeToggle.innerHTML = `<span aria-hidden="true">${isDark ? '☼' : '◐'}</span><b>${isDark ? 'Светлая' : 'Тёмная'}</b>`;
         themeToggle.title = isDark ? 'Светлая тема' : 'Тёмная тема';
         themeToggle.setAttribute('aria-label', isDark ? 'Переключить на светлую тему' : 'Переключить на тёмную тему');
         themeToggle.setAttribute('aria-pressed', String(isDark));
@@ -73,6 +73,8 @@
     let lastSupportCount = 0;
     let sending = false;
     let selectedFiles = [];
+    let pendingDeleteMessageId = null;
+    let pendingDeleteButton = null;
 
     function escapeHtml(value) {
         return String(value || '')
@@ -96,6 +98,21 @@
         if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
         if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
         return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+    }
+
+    function messageBodyText(message) {
+        const attachments = message.attachments || [];
+        const body = String(message.body || '').trim();
+        if (body !== '' && body !== '[файл]' && body !== 'Файл') return escapeHtml(body);
+        if (!attachments.length) return escapeHtml(body || '');
+        if (attachments.length === 1) {
+            const att = attachments[0];
+            const mime = String(att.mime_type || '');
+            if (mime.startsWith('image/')) return 'Фото: ' + escapeHtml(att.original_filename || 'изображение');
+            if (mime.startsWith('video/')) return 'Видео: ' + escapeHtml(att.original_filename || 'видео');
+            return 'Файл: ' + escapeHtml(att.original_filename || 'файл');
+        }
+        return 'Файлы: ' + attachments.length;
     }
 
     function autosize() {
@@ -144,17 +161,17 @@
         if (!attachments || attachments.length === 0) return '';
 
         return '<div class="attachments">' + attachments.map((att) => {
-            const ext = att.original_filename.split('.').pop().toLowerCase();
+            const ext = String(att.original_filename || '').split('.').pop().toLowerCase();
             const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext);
             const isVideo = ['mp4', 'webm', 'mov', 'mkv', 'avi'].includes(ext);
 
             if (isImage) {
-                return `<a href="api/download.php?id=${att.id}" class="attachment-image" title="${escapeHtml(att.original_filename)}" target="_blank">
-                    <img src="api/download.php?id=${att.id}" alt="${escapeHtml(att.original_filename)}" style="max-width: 200px; max-height: 200px; border-radius: 4px;">
+                return `<a href="api/download.php?id=${att.id}&inline=1" class="attachment-image" title="${escapeHtml(att.original_filename)}" target="_blank">
+                    <img src="api/download.php?id=${att.id}&inline=1" alt="${escapeHtml(att.original_filename)}" style="max-width: 200px; max-height: 200px; border-radius: 4px;">
                 </a>`;
             } else if (isVideo) {
                 return `<video controls style="max-width: 300px; max-height: 200px; border-radius: 4px;" title="${escapeHtml(att.original_filename)}">
-                    <source src="api/download.php?id=${att.id}" type="${att.mime_type}">
+                    <source src="api/download.php?id=${att.id}&inline=1" type="${escapeHtml(att.mime_type)}">
                     Видео не поддерживается
                 </video>`;
             } else {
@@ -165,8 +182,94 @@
         }).join('') + '</div>';
     }
 
+    function trashIcon() {
+        return `
+            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                <path d="M9 3h6l1 2h4v2H4V5h4l1-2Z"></path>
+                <path d="M6.5 9h11l-.7 10.2A2 2 0 0 1 14.8 21H9.2a2 2 0 0 1-2-1.8L6.5 9Z"></path>
+                <path d="M10 11.5v6M14 11.5v6"></path>
+            </svg>
+        `;
+    }
+
+    function ensureDeleteConfirm() {
+        let modal = document.getElementById('visitorDeleteConfirmModal');
+        if (modal) {
+            return modal;
+        }
+
+        modal = document.createElement('div');
+        modal.id = 'visitorDeleteConfirmModal';
+        modal.className = 'visitor-confirm-modal';
+        modal.hidden = true;
+        modal.innerHTML = `
+            <div class="visitor-confirm-modal__backdrop" data-delete-cancel></div>
+            <section class="visitor-confirm-modal__panel" role="dialog" aria-modal="true" aria-labelledby="visitorDeleteConfirmTitle">
+                <div class="visitor-confirm-modal__icon">!</div>
+                <div class="visitor-confirm-modal__content">
+                    <h3 id="visitorDeleteConfirmTitle">Удалить сообщение?</h3>
+                    <p>Сообщение исчезнет у вас, но останется в истории поддержки серым.</p>
+                </div>
+                <div class="visitor-confirm-modal__actions">
+                    <button type="button" class="visitor-confirm-modal__cancel" data-delete-cancel>Отмена</button>
+                    <button type="button" class="visitor-confirm-modal__delete" id="visitorDeleteConfirmAction">Удалить</button>
+                </div>
+            </section>
+        `;
+        document.body.appendChild(modal);
+
+        modal.querySelectorAll('[data-delete-cancel]').forEach((button) => {
+            button.addEventListener('click', closeDeleteConfirm);
+        });
+        modal.querySelector('#visitorDeleteConfirmAction').addEventListener('click', async () => {
+            if (!pendingDeleteMessageId) {
+                closeDeleteConfirm();
+                return;
+            }
+
+            const action = modal.querySelector('#visitorDeleteConfirmAction');
+            action.disabled = true;
+            action.textContent = 'Удаляем...';
+            try {
+                const deleted = await deleteMessage(pendingDeleteMessageId, pendingDeleteButton);
+                if (deleted) {
+                    closeDeleteConfirm();
+                }
+            } finally {
+                action.disabled = false;
+                action.textContent = 'Удалить';
+            }
+        });
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && !modal.hidden) {
+                closeDeleteConfirm();
+            }
+        });
+
+        return modal;
+    }
+
+    function openDeleteConfirm(messageId, button) {
+        pendingDeleteMessageId = messageId;
+        pendingDeleteButton = button;
+        const modal = ensureDeleteConfirm();
+        modal.hidden = false;
+        document.body.classList.add('visitor-confirm-open');
+        setTimeout(() => modal.querySelector('.visitor-confirm-modal__cancel')?.focus(), 0);
+    }
+
+    function closeDeleteConfirm() {
+        const modal = document.getElementById('visitorDeleteConfirmModal');
+        if (modal) {
+            modal.hidden = true;
+        }
+        pendingDeleteMessageId = null;
+        pendingDeleteButton = null;
+        document.body.classList.remove('visitor-confirm-open');
+    }
+
     function render(items) {
-        const signature = JSON.stringify(items.map((message) => [message.id, message.sender, message.body, (message.attachments || []).map(a => a.id).join(',')]));
+        const signature = JSON.stringify(items.map((message) => [message.id, message.sender, message.body, message.delivery_error || '', (message.attachments || []).map(a => [a.id, a.original_filename, a.mime_type].join(':')).join(','), message.is_deleted_by_visitor, message.is_deleted_for_user]));
         if (signature === messageSignature) {
             return;
         }
@@ -189,17 +292,27 @@
         }
 
         messages.innerHTML = items.map((message) => {
-            const isDeleted = message.is_deleted_by_visitor;
+            const isDeleted = Boolean(message.is_deleted_by_visitor || message.is_deleted_for_user);
             const isSender = message.sender === 'visitor';
+            const senderClass = message.sender === 'support' ? 'support' : message.sender === 'system' ? 'system' : 'visitor';
+            const author = message.sender === 'support' ? 'Поддержка' : message.sender === 'system' ? 'Система' : 'Вы';
+            const deleteButton = isSender && !isDeleted
+                ? `<button class="delete-message-btn" data-message-id="${message.id}" title="Удалить сообщение" aria-label="Удалить сообщение">${trashIcon()}</button>`
+                : '';
             return `
-            <article class="message ${message.sender}${isDeleted ? ' message-deleted' : ''}">
-                <div class="message-body">${isDeleted ? '<em>Сообщение удалено</em>' : escapeHtml(message.body)}</div>
-                ${!isDeleted ? renderAttachments(message.attachments || []) : ''}
-                <div class="message-meta">
-                    ${message.sender === 'support' ? 'Поддержка' : message.sender === 'system' ? 'Система' : 'Вы'} · ${escapeHtml(formatDate(message.created_at))}
-                    ${isSender && !isDeleted ? `<button class="delete-message-btn" data-message-id="${message.id}" title="Удалить сообщение">✕</button>` : ''}
+            <div class="message-row ${senderClass}${isDeleted ? ' message-deleted' : ''}">
+                <div class="message-line">
+                    ${deleteButton}
+                    <article class="message ${senderClass}${message.delivery_error ? ' message-delivery-error' : ''}">
+                        <div class="message-body">${isDeleted ? '<em>Сообщение удалено</em>' : messageBodyText(message)}</div>
+                        ${!isDeleted && message.delivery_error ? `<div class="message-error-note">Ошибка доставки: ${escapeHtml(message.delivery_error)}</div>` : ``}
+                        ${!isDeleted ? renderAttachments(message.attachments || []) : ''}
+                    </article>
                 </div>
-            </article>
+                <div class="message-meta">
+                    <span>${author} · ${escapeHtml(formatDate(message.created_at))}</span>
+                </div>
+            </div>
         `;
         }).join('');
         messages.scrollTop = messages.scrollHeight;
@@ -209,7 +322,7 @@
             btn.addEventListener('click', async (e) => {
                 e.preventDefault();
                 const messageId = parseInt(btn.dataset.messageId);
-                await deleteMessage(messageId, btn);
+                openDeleteConfirm(messageId, btn);
             });
         });
     }
@@ -217,7 +330,7 @@
     async function deleteMessage(messageId, btn) {
         try {
             btn.disabled = true;
-            btn.textContent = '...';
+            btn.classList.add('is-loading');
             
             const res = await fetch('api/delete_message.php', {
                 method: 'POST',
@@ -229,15 +342,17 @@
             if (!data.ok) {
                 showError(data.error || 'Ошибка удаления сообщения');
                 btn.disabled = false;
-                btn.textContent = '✕';
-                return;
+                btn.classList.remove('is-loading');
+                return false;
             }
             
             await loadMessages();
+            return true;
         } catch (err) {
             showError(err.message || 'Ошибка сети при удалении');
             btn.disabled = false;
-            btn.textContent = '✕';
+            btn.classList.remove('is-loading');
+            return false;
         }
     }
 
@@ -321,7 +436,7 @@
     }
 
     launcher.addEventListener('click', () => setOpen(true));
-    closeChat.addEventListener('click', () => setOpen(false));
+    if (closeChat) closeChat.addEventListener('click', () => setOpen(false));
 
     if (themeToggle) {
         themeToggle.addEventListener('click', () => {

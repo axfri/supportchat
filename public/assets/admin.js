@@ -1,5 +1,7 @@
 (function () {
-    const tokenInput = document.getElementById('adminToken');
+    const adminLogin = document.getElementById('adminLogin');
+    const adminPassword = document.getElementById('adminPassword');
+    const authError = document.getElementById('authError');
     const authForm = document.getElementById('authForm');
     const conversationList = document.getElementById('conversationList');
     const messages = document.getElementById('messages');
@@ -26,8 +28,9 @@
     const detailUpdated = document.getElementById('detailUpdated');
     const operatorNote = document.getElementById('operatorNote');
     const soundToggle = document.getElementById('soundToggle');
+    const adminThemeToggle = document.getElementById('adminThemeToggle');
 
-    let token = localStorage.getItem('support_admin_token') || '';
+    let isAuthorized = false;
     let soundEnabled = localStorage.getItem('support_sound_enabled') === '1';
     let conversations = [];
     let selectedId = null;
@@ -37,16 +40,28 @@
     let sending = false;
     let loadingConversations = false;
     let selectedFiles = [];
+    let pendingDeleteMessageId = null;
 
-    tokenInput.value = token;
     soundToggle.textContent = soundEnabled ? 'Звук: вкл' : 'Звук: выкл';
 
-    function api(path, options) {
-        const headers = Object.assign({
-            Authorization: 'Bearer ' + token,
-        }, options && options.headers ? options.headers : {});
+    function setAdminTheme(theme, persist) {
+        const nextTheme = theme === 'light' ? 'light' : 'dark';
+        document.documentElement.dataset.theme = nextTheme;
+        if (adminThemeToggle) {
+            adminThemeToggle.textContent = nextTheme === 'dark' ? '☀️' : '🌙';
+            adminThemeToggle.title = nextTheme === 'dark' ? 'Светлая тема' : 'Тёмная тема';
+        }
+        if (persist !== false) {
+            localStorage.setItem('support_admin_theme', nextTheme);
+        }
+    }
 
-        return fetch(path, Object.assign({}, options || {}, { headers }))
+    setAdminTheme(document.documentElement.dataset.theme || 'dark', false);
+
+    function api(path, options) {
+        const headers = Object.assign({}, options && options.headers ? options.headers : {});
+
+        return fetch(path, Object.assign({}, options || {}, { headers, credentials: 'same-origin' }))
             .then((response) => response.json().then((data) => {
                 if (!response.ok || !data.ok) {
                     throw new Error(data.error || 'Ошибка запроса');
@@ -61,6 +76,57 @@
 
     function statusText(status) {
         return ({ new: 'Новый', open: 'В работе', closed: 'Закрыт' })[status] || 'В работе';
+    }
+
+    const cp1251Reverse = {
+        '\u0402': 0x80, '\u0403': 0x81, '\u201a': 0x82, '\u0453': 0x83, '\u201e': 0x84, '\u2026': 0x85, '\u2020': 0x86, '\u2021': 0x87,
+        '\u20ac': 0x88, '\u2030': 0x89, '\u0409': 0x8a, '\u2039': 0x8b, '\u040a': 0x8c, '\u040c': 0x8d, '\u040b': 0x8e, '\u040f': 0x8f,
+        '\u0452': 0x90, '\u2018': 0x91, '\u2019': 0x92, '\u201c': 0x93, '\u201d': 0x94, '\u2022': 0x95, '\u2013': 0x96, '\u2014': 0x97,
+        '\u2122': 0x99, '\u0459': 0x9a, '\u203a': 0x9b, '\u045a': 0x9c, '\u045c': 0x9d, '\u045b': 0x9e, '\u045f': 0x9f,
+        '\u00a0': 0xa0, '\u040e': 0xa1, '\u045e': 0xa2, '\u0408': 0xa3, '\u00a4': 0xa4, '\u0490': 0xa5, '\u00a6': 0xa6, '\u00a7': 0xa7,
+        '\u0401': 0xa8, '\u00a9': 0xa9, '\u0404': 0xaa, '\u00ab': 0xab, '\u00ac': 0xac, '\u00ad': 0xad, '\u00ae': 0xae, '\u0407': 0xaf,
+        '\u00b0': 0xb0, '\u00b1': 0xb1, '\u0406': 0xb2, '\u0456': 0xb3, '\u0491': 0xb4, '\u00b5': 0xb5, '\u00b6': 0xb6, '\u00b7': 0xb7,
+        '\u0451': 0xb8, '\u2116': 0xb9, '\u0454': 0xba, '\u00bb': 0xbb, '\u0458': 0xbc, '\u0405': 0xbd, '\u0455': 0xbe, '\u0457': 0xbf,
+    };
+
+    function cp1251Byte(char) {
+        const code = char.charCodeAt(0);
+        if (code <= 0x7f) return code;
+        if (code >= 0x0410 && code <= 0x044f) return code - 0x350;
+        return cp1251Reverse[char] || null;
+    }
+
+    function repairText(value) {
+        const text = String(value || '');
+        if (!/[РС][\u0400-\u052f\u2018\u2019\u201c\u201d]/.test(text) && !/[ÐÑ]/.test(text)) return text;
+        try {
+            if (typeof TextDecoder === 'undefined') return text;
+            const bytes = [];
+            for (const char of text) {
+                const byte = cp1251Byte(char);
+                if (byte === null) return text;
+                bytes.push(byte);
+            }
+            return new TextDecoder('utf-8', { fatal: true }).decode(new Uint8Array(bytes));
+        } catch (error) {
+            return text;
+        }
+    }
+
+    function displayText(value) {
+        return escapeHtml(repairText(value));
+    }
+
+    function dialogLabel(item) {
+        return 'ID диалога: ' + (item && item.id ? item.id : '-');
+    }
+
+    function adminDownloadUrl(att, inline) {
+        const params = new URLSearchParams();
+        params.set('id', att.id);
+        params.set('admin', '1');
+        if (inline) params.set('inline', '1');
+        return 'api/download.php?' + params.toString();
     }
 
     function escapeHtml(value) {
@@ -88,7 +154,7 @@
     }
 
     function initials(item) {
-        const name = (item && (item.visitor_name || item.visitor_handle || item.external_id)) || '?';
+        const name = (item && item.visitor_name) || '?';
         return name.trim().slice(0, 1).toUpperCase();
     }
 
@@ -140,7 +206,7 @@
             <div class="file-item">
                 <span class="file-name">${escapeHtml(file.name)}</span>
                 <span class="file-size">${formatFileSize(file.size)}</span>
-                <button type="button" class="remove-file" data-index="${i}" title="Удалить">✕</button>
+                <button type="button" class="remove-file" data-index="${i}" title="Удалить">x</button>
             </div>
         `).join('');
 
@@ -156,26 +222,57 @@
         });
     }
 
-    function renderAttachments(attachments) {
+    function messageBodyText(message) {
+        const attachments = message.attachments || [];
+        const body = repairText(message.body || '').trim();
+        if (body !== '' && body !== '[файл]' && body !== 'Файл') return displayText(body);
+        if (!attachments.length) return displayText(body || '');
+        if (attachments.length === 1) {
+            const att = attachments[0];
+            const mime = String(att.mime_type || '');
+            if (mime.startsWith('image/')) return 'Фото: ' + displayText(att.original_filename || 'изображение');
+            if (mime.startsWith('video/')) return 'Видео: ' + displayText(att.original_filename || 'видео');
+            return 'Файл: ' + displayText(att.original_filename || 'файл');
+        }
+        return 'Файлы: ' + attachments.length;
+    }
+    function renderAttachments(attachments, disableLinks = false) {
         if (!attachments || attachments.length === 0) return '';
 
         return '<div class="attachments">' + attachments.map((att) => {
             const ext = att.original_filename.split('.').pop().toLowerCase();
             const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext);
             const isVideo = ['mp4', 'webm', 'mov', 'mkv', 'avi'].includes(ext);
+            const inlineUrl = adminDownloadUrl(att, true);
+            const downloadUrl = adminDownloadUrl(att, false);
 
             if (isImage) {
-                return `<a href="api/download.php?id=${att.id}&admin=1" class="attachment-image" title="${escapeHtml(att.original_filename)}" target="_blank">
-                    <img src="api/download.php?id=${att.id}&admin=1" alt="${escapeHtml(att.original_filename)}" style="max-width: 200px; max-height: 200px; border-radius: 4px;">
+                if (disableLinks) {
+                    return `<div class="attachment-image-disabled" title="${displayText(att.original_filename)}">
+                        <img src="${inlineUrl}" alt="${displayText(att.original_filename)}" style="max-width: 200px; max-height: 200px; border-radius: 4px; opacity: .7; filter: grayscale(30%);">
+                    </div>`;
+                }
+                return `<a href="${downloadUrl}" class="attachment-image" title="${displayText(att.original_filename)}" target="_blank">
+                    <img src="${inlineUrl}" alt="${displayText(att.original_filename)}" style="max-width: 200px; max-height: 200px; border-radius: 4px;">
                 </a>`;
             } else if (isVideo) {
-                return `<video controls style="max-width: 300px; max-height: 200px; border-radius: 4px;" title="${escapeHtml(att.original_filename)}">
-                    <source src="api/download.php?id=${att.id}&admin=1" type="${att.mime_type}">
+                if (disableLinks) {
+                    return `<div class="attachment-video-disabled" title="${displayText(att.original_filename)}">
+                        <video style="max-width: 300px; max-height: 200px; border-radius: 4px;" title="${displayText(att.original_filename)}">
+                            <source src="${inlineUrl}" type="${att.mime_type}">
+                        </video>
+                    </div>`;
+                }
+                return `<video controls style="max-width: 300px; max-height: 200px; border-radius: 4px;" title="${displayText(att.original_filename)}">
+                    <source src="${inlineUrl}" type="${att.mime_type}">
                     Видео не поддерживается
                 </video>`;
             } else {
-                return `<a href="api/download.php?id=${att.id}&admin=1" class="attachment-file" download="${escapeHtml(att.original_filename)}" title="${escapeHtml(att.original_filename)}">
-                    📎 ${escapeHtml(att.original_filename)} (${formatFileSize(att.file_size)})
+                if (disableLinks) {
+                    return `<div class="attachment-file-disabled" title="${displayText(att.original_filename)}">📎 ${displayText(att.original_filename)} (${formatFileSize(att.file_size)})</div>`;
+                }
+                return `<a href="${downloadUrl}" class="attachment-file" download="${displayText(att.original_filename)}" title="${displayText(att.original_filename)}">
+                    📎 ${displayText(att.original_filename)} (${formatFileSize(att.file_size)})
                 </a>`;
             }
         }).join('') + '</div>';
@@ -184,7 +281,7 @@
     function showError(errorMessage) {
         const errorDiv = document.createElement('div');
         errorDiv.className = 'admin-error-message';
-        errorDiv.textContent = '⚠ ' + errorMessage;
+        errorDiv.textContent = 'Ошибка: ' + repairText(errorMessage);
         messages.parentElement.insertBefore(errorDiv, messages);
         
         setTimeout(() => {
@@ -194,9 +291,86 @@
         }, 6000);
     }
 
+    function ensureDeleteConfirm() {
+        let modal = document.getElementById('deleteConfirmModal');
+        if (modal) {
+            return modal;
+        }
+
+        modal = document.createElement('div');
+        modal.id = 'deleteConfirmModal';
+        modal.className = 'confirm-modal';
+        modal.hidden = true;
+        modal.innerHTML = `
+            <div class="confirm-modal__backdrop" data-confirm-close></div>
+            <section class="confirm-modal__panel" role="dialog" aria-modal="true" aria-labelledby="deleteConfirmTitle">
+                <div class="confirm-modal__icon">!</div>
+                <div class="confirm-modal__content">
+                    <h3 id="deleteConfirmTitle">Удалить сообщение?</h3>
+                    <p>Сообщение исчезнет у пользователя, но останется в истории поддержки серым.</p>
+                </div>
+                <div class="confirm-modal__actions">
+                    <button type="button" class="confirm-modal__cancel" data-confirm-close>Отмена</button>
+                    <button type="button" class="confirm-modal__delete" id="deleteConfirmAction">Удалить</button>
+                </div>
+            </section>
+        `;
+        document.body.appendChild(modal);
+
+        modal.querySelectorAll('[data-confirm-close]').forEach((button) => {
+            button.addEventListener('click', closeDeleteConfirm);
+        });
+
+        modal.querySelector('#deleteConfirmAction').addEventListener('click', async () => {
+            if (!pendingDeleteMessageId) {
+                closeDeleteConfirm();
+                return;
+            }
+
+            const action = modal.querySelector('#deleteConfirmAction');
+            action.disabled = true;
+            action.textContent = 'Удаляем...';
+
+            try {
+                const deleted = await deleteMessageForUser(pendingDeleteMessageId);
+                if (deleted) {
+                    closeDeleteConfirm();
+                }
+            } finally {
+                action.disabled = false;
+                action.textContent = 'Удалить';
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && !modal.hidden) {
+                closeDeleteConfirm();
+            }
+        });
+
+        return modal;
+    }
+
+    function openDeleteConfirm(messageId) {
+        pendingDeleteMessageId = messageId;
+        const modal = ensureDeleteConfirm();
+        modal.hidden = false;
+        document.body.classList.add('confirm-open');
+        setTimeout(() => modal.querySelector('.confirm-modal__cancel')?.focus(), 0);
+    }
+
+    function closeDeleteConfirm() {
+        const modal = document.getElementById('deleteConfirmModal');
+        if (modal) {
+            modal.hidden = true;
+        }
+        pendingDeleteMessageId = null;
+        document.body.classList.remove('confirm-open');
+    }
+
     function renderConversations() {
-        if (!token) {
-            conversationList.innerHTML = '<div class="empty">Введите ключ доступа</div>';
+        if (!isAuthorized) {
+            conversationList.innerHTML = '<div class="empty">Войдите в панель оператора</div>';
             return;
         }
 
@@ -208,8 +382,8 @@
         conversationList.innerHTML = conversations.map((item) => {
             const active = Number(item.id) === Number(selectedId) ? ' active' : '';
             const unread = Number(item.unread_support || 0);
-            const name = item.visitor_name || item.visitor_handle || 'Клиент';
-            const last = item.last_message || 'Нет сообщений';
+            const name = repairText(item.visitor_name || item.visitor_handle || 'Клиент');
+            const last = repairText(item.last_message || 'Нет сообщений');
             const preview = last.length > 94 ? last.slice(0, 91) + '...' : last;
             const time = formatDate(item.last_message_at || item.updated_at);
             return `
@@ -217,10 +391,10 @@
                     <span class="avatar">${escapeHtml(initials(item))}</span>
                     <span class="conversation-main">
                         <span class="conversation-top">
-                            <strong>${escapeHtml(name)}</strong>
+                            <strong>${displayText(name)}</strong>
                             <small>${escapeHtml(time)}</small>
                         </span>
-                        <span class="last">${escapeHtml(preview)}</span>
+                        <span class="last">${displayText(preview)}</span>
                         <span class="conversation-meta">
                             <span class="badge ${item.channel}">${channelText(item.channel)}</span>
                             <span class="badge status-${item.status || 'open'}">${statusText(item.status)}</span>
@@ -258,9 +432,9 @@
             return;
         }
 
-        const title = item.visitor_name || item.visitor_handle || 'Клиент';
+        const title = repairText(item.visitor_name || 'Клиент');
         chatTitle.textContent = title;
-        chatSubtitle.textContent = item.visitor_handle || item.external_id || 'Диалог #' + item.id;
+        chatSubtitle.textContent = dialogLabel(item);
         channelBadge.textContent = channelText(item.channel);
         channelBadge.className = 'badge ' + item.channel;
         statusBadge.textContent = statusText(item.status);
@@ -273,7 +447,7 @@
 
         clientAvatar.textContent = initials(item);
         clientName.textContent = title;
-        clientHandle.textContent = item.visitor_handle || item.external_id || 'Без контакта';
+        clientHandle.textContent = dialogLabel(item);
         detailChannel.textContent = channelText(item.channel);
         detailStatus.textContent = statusText(item.status);
         detailCreated.textContent = formatDate(item.created_at);
@@ -282,15 +456,33 @@
         operatorNote.value = localStorage.getItem('support_note_' + item.id) || '';
     }
 
+    async function deleteMessageForUser(messageId) {
+        try {
+            const result = await api('api/messages.php?admin=1', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ action: 'delete_for_user', message_id: messageId }),
+            });
+            if (result.telegram_errors && result.telegram_errors.length) {
+                showError('Сообщение удалено на сайте, но не удалено в Telegram: ' + result.telegram_errors.join('\n'));
+            }
+            await loadMessages();
+            return true;
+        } catch (error) {
+            showError(error.message || 'Не удалось удалить сообщение');
+            return false;
+        }
+    }
+
     function renderMessages(items) {
-        const signature = JSON.stringify(items.map((message) => [message.id, message.sender, message.body, (message.attachments || []).map(a => a.id).join(','), message.is_deleted_by_visitor]));
+        const signature = JSON.stringify(items.map((message) => [message.id, message.sender, message.body, message.delivery_error || '', (message.attachments || []).map(a => [a.id, a.original_filename, a.mime_type].join(':')).join(','), message.is_deleted_by_visitor, message.is_deleted_for_user]));
         if (signature === messageSignature) {
             return;
         }
         messageSignature = signature;
 
         if (items.length === 0) {
-            messages.innerHTML = '<div class="empty">Сообщений пока нет</div>';
+        messages.innerHTML = '<div class="empty">Выберите диалог</div>';
             return;
         }
 
@@ -300,17 +492,37 @@
             const divider = day && day !== lastDay ? `<div class="day-divider">${escapeHtml(formatDate(message.created_at).split(',')[0] || day)}</div>` : '';
             lastDay = day || lastDay;
             const author = message.sender === 'support' ? 'Оператор' : message.sender === 'system' ? 'Система' : 'Клиент';
-            const isDeleted = message.is_deleted_by_visitor;
+            const isDeletedForUser = Boolean(message.is_deleted_for_user);
+            const isDeletedByVisitor = Boolean(message.is_deleted_by_visitor);
+            const isDeleted = isDeletedForUser || isDeletedByVisitor;
+            const deleteLabel = isDeletedForUser ? 'Удалено для пользователя' : isDeletedByVisitor ? 'Удалено клиентом' : '';
             return `
                 ${divider}
-                <article class="message ${message.sender}${isDeleted ? ' message-deleted' : ''}">
-                    <div class="message-meta">${author} · ${escapeHtml(formatDate(message.created_at))}${isDeleted ? ' (удалено клиентом)' : ''}</div>
-                    <div class="message-body">${isDeleted ? '<em>Сообщение удалено</em>' : escapeHtml(message.body)}</div>
-                    ${!isDeleted ? renderAttachments(message.attachments || []) : ''}
+                <article class="message ${message.sender}${isDeleted ? ' message-deleted' : ''}${message.delivery_error ? ' message-delivery-error' : ''}">
+                    <div class="message-head">
+                        <div class="message-meta">
+                            ${author} · ${escapeHtml(formatDate(message.created_at))}
+                            ${isDeleted ? `<span class="message-delete-state">• ${escapeHtml(deleteLabel)}</span>` : ''}
+                        </div>
+                        ${message.sender !== 'system' && !isDeleted ? `<button class="delete-message-btn" data-message-id="${message.id}" type="button" aria-label="Удалить сообщение"><span></span></button>` : ''}
+                    </div>
+                    <div class="message-body">${messageBodyText(message)}</div>
+                    ${message.delivery_error ? `<div class="message-error-note">Не доставлено в Telegram: ${displayText(message.delivery_error)}</div>` : ``}
+                    ${renderAttachments(message.attachments || [], isDeleted)}
                 </article>
             `;
         }).join('');
         messages.scrollTop = messages.scrollHeight;
+
+        messages.querySelectorAll('.delete-message-btn').forEach((button) => {
+            button.addEventListener('click', async (event) => {
+                event.preventDefault();
+                const messageId = Number(button.dataset.messageId);
+                if (Number.isFinite(messageId)) {
+                    openDeleteConfirm(messageId);
+                }
+            });
+        });
     }
 
     function selectConversation(id) {
@@ -323,7 +535,7 @@
     }
 
     function loadConversations() {
-        if (!token || loadingConversations) {
+        if (!isAuthorized || loadingConversations) {
             renderConversations();
             return Promise.resolve();
         }
@@ -358,6 +570,12 @@
                 return null;
             })
             .catch((error) => {
+                if (/Unauthorized/i.test(error.message)) {
+                    setAuthorizedState(false);
+                    renderConversations();
+                    showAuthError('Сессия оператора истекла. Войдите снова.');
+                    return;
+                }
                 conversationList.innerHTML = '<div class="empty">' + escapeHtml(error.message) + '</div>';
             })
             .finally(() => {
@@ -366,12 +584,21 @@
     }
 
     function loadMessages() {
-        if (!selectedId || !token) {
+        if (!selectedId || !isAuthorized) {
             return Promise.resolve();
         }
 
         return api('api/messages.php?admin=1&conversation_id=' + encodeURIComponent(selectedId))
             .then((data) => {
+                conversations = conversations.map((item) => {
+                    if (Number(item.id) === Number(selectedId)) {
+                        return { ...item, unread_support: 0 };
+                    }
+                    return item;
+                });
+                lastUnreadTotal = conversations.reduce((sum, item) => sum + Number(item.unread_support || 0), 0);
+                updateTitle(lastUnreadTotal);
+                renderConversations();
                 if (data.conversation) {
                     selectedConversation = data.conversation;
                     setChatState(data.conversation);
@@ -397,7 +624,7 @@
     }
 
     async function changeStatus(status) {
-        if (!selectedId || !token) return;
+        if (!selectedId || !isAuthorized) return;
         try {
             await api('api/conversations.php', {
                 method: 'POST',
@@ -411,14 +638,46 @@
         }
     }
 
-    authForm.addEventListener('submit', (event) => {
+    function showAuthError(message) {
+        if (!authError) return;
+        authError.textContent = message || '';
+        authError.hidden = !message;
+    }
+
+    function setAuthorizedState(value) {
+        isAuthorized = Boolean(value);
+        if (!value) {
+            window.location.href = 'login.php';
+            return;
+        }
+        if (authForm) {
+            authForm.classList.toggle('auth-ok', isAuthorized);
+            authForm.hidden = isAuthorized;
+            authForm.style.display = isAuthorized ? 'none' : '';
+        }
+    }
+
+    if (authForm) authForm.addEventListener('submit', async (event) => {
         event.preventDefault();
-        token = tokenInput.value.trim();
-        localStorage.setItem('support_admin_token', token);
-        selectedId = null;
-        selectedConversation = null;
-        messageSignature = '';
-        loadConversations();
+        showAuthError('');
+        const login = adminLogin ? adminLogin.value.trim() : '';
+        const password = adminPassword ? adminPassword.value : '';
+        try {
+            await api('api/admin_login.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ login, password }),
+            });
+            if (adminPassword) adminPassword.value = '';
+            setAuthorizedState(true);
+            selectedId = null;
+            selectedConversation = null;
+            messageSignature = '';
+            await loadConversations();
+        } catch (error) {
+            setAuthorizedState(false);
+            showAuthError(error.message || 'Не удалось войти');
+        }
     });
 
     function resetSelectionAndLoad() {
@@ -458,6 +717,13 @@
         soundToggle.textContent = soundEnabled ? 'Звук: вкл' : 'Звук: выкл';
         if (soundEnabled) playNotification();
     });
+
+    if (adminThemeToggle) {
+        adminThemeToggle.addEventListener('click', () => {
+            const current = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+            setAdminTheme(current === 'light' ? 'dark' : 'light', true);
+        });
+    }
 
     operatorNote.addEventListener('input', () => {
         if (selectedId) {
@@ -500,10 +766,13 @@
                 formData.append('files[]', file);
             }
 
-            await api('api/messages.php?admin=1', {
+            const result = await api('api/messages.php?admin=1', {
                 method: 'POST',
                 body: formData,
             });
+            if (result.upload_errors && result.upload_errors.length) {
+                showError(result.upload_errors.join('\n'));
+            }
             messageInput.value = '';
             selectedFiles = [];
             updateFilePreview();
@@ -512,7 +781,7 @@
             await loadMessages();
             await loadConversations();
         } catch (error) {
-            alert(error.message);
+            showError(error.message || 'Не удалось отправить сообщение');
         } finally {
             sending = false;
             setChatState(selectedConversation);
@@ -521,394 +790,17 @@
 
     setInterval(loadConversations, 5000);
     setInterval(loadMessages, 2500);
-    loadConversations();
-}());
-
-    function api(path, options) {
-        const headers = Object.assign({
-            Authorization: 'Bearer ' + token,
-        }, options && options.headers ? options.headers : {});
-
-        return fetch(path, Object.assign({}, options || {}, { headers }))
-            .then((response) => response.json().then((data) => {
-                if (!response.ok || !data.ok) {
-                    throw new Error(data.error || 'Ошибка запроса');
-                }
-                return data;
-            }));
-    }
-
-    function channelText(channel) {
-        return channel === 'telegram' ? 'Telegram' : 'Сайт';
-    }
-
-    function statusText(status) {
-        return ({ new: 'Новый', open: 'В работе', closed: 'Закрыт' })[status] || 'В работе';
-    }
-
-    function escapeHtml(value) {
-        return String(value || '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#039;');
-    }
-
-    function formatDate(value) {
-        if (!value) return '-';
-        const normalized = String(value).replace(' ', 'T') + 'Z';
-        const date = new Date(normalized);
-        if (Number.isNaN(date.getTime())) return value;
-        return date.toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' });
-    }
-
-    function initials(item) {
-        const name = (item && (item.visitor_name || item.visitor_handle || item.external_id)) || '?';
-        return name.trim().slice(0, 1).toUpperCase();
-    }
-
-    function currentQuery() {
-        const params = new URLSearchParams();
-        const search = searchInput.value.trim();
-        if (search) params.set('search', search);
-        if (statusFilter.value) params.set('status', statusFilter.value);
-        if (channelFilter.value) params.set('channel', channelFilter.value);
-        const query = params.toString();
-        return query ? '?' + query : '';
-    }
-
-    function playNotification() {
-        if (!soundEnabled) return;
-        try {
-            const AudioContext = window.AudioContext || window.webkitAudioContext;
-            const context = new AudioContext();
-            const oscillator = context.createOscillator();
-            const gain = context.createGain();
-            oscillator.type = 'sine';
-            oscillator.frequency.value = 820;
-            gain.gain.setValueAtTime(0.0001, context.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.08, context.currentTime + 0.02);
-            gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 0.22);
-            oscillator.connect(gain);
-            gain.connect(context.destination);
-            oscillator.start();
-            oscillator.stop(context.currentTime + 0.24);
-        } catch (error) {
-            soundEnabled = false;
-            localStorage.setItem('support_sound_enabled', '0');
-            soundToggle.textContent = 'Звук: выкл';
-        }
-    }
-
-    function updateTitle(unreadTotal) {
-        document.title = unreadTotal > 0 ? '(' + unreadTotal + ') Поддержка - F-ART.bot' : 'Поддержка - F-ART.bot';
-    }
-
-    function renderConversations() {
-        if (!token) {
-            conversationList.innerHTML = '<div class="empty">Введите ключ доступа</div>';
-            return;
-        }
-
-        if (conversations.length === 0) {
-            conversationList.innerHTML = '<div class="empty">Диалогов пока нет</div>';
-            return;
-        }
-
-        conversationList.innerHTML = conversations.map((item) => {
-            const active = Number(item.id) === Number(selectedId) ? ' active' : '';
-            const unread = Number(item.unread_support || 0);
-            const name = item.visitor_name || item.visitor_handle || 'Клиент';
-            const last = item.last_message || 'Нет сообщений';
-            const preview = last.length > 94 ? last.slice(0, 91) + '...' : last;
-            const time = formatDate(item.last_message_at || item.updated_at);
-            return `
-                <button class="conversation${active}" data-id="${item.id}" type="button">
-                    <span class="avatar">${escapeHtml(initials(item))}</span>
-                    <span class="conversation-main">
-                        <span class="conversation-top">
-                            <strong>${escapeHtml(name)}</strong>
-                            <small>${escapeHtml(time)}</small>
-                        </span>
-                        <span class="last">${escapeHtml(preview)}</span>
-                        <span class="conversation-meta">
-                            <span class="badge ${item.channel}">${channelText(item.channel)}</span>
-                            <span class="badge status-${item.status || 'open'}">${statusText(item.status)}</span>
-                            ${unread > 0 ? `<span class="badge unread">${unread}</span>` : ''}
-                        </span>
-                    </span>
-                </button>
-            `;
-        }).join('');
-    }
-
-    function setChatState(item) {
-        selectedConversation = item || null;
-        const disabled = !item || item.status === 'closed' || sending;
-
-        if (!item) {
-            chatTitle.textContent = 'Выберите диалог';
-            chatSubtitle.textContent = 'Новые сообщения обновляются автоматически';
-            channelBadge.textContent = '-';
-            channelBadge.className = 'badge muted';
-            statusBadge.textContent = '-';
-            statusBadge.className = 'badge muted';
-            messageInput.disabled = true;
-            sendButton.disabled = true;
-            clientAvatar.textContent = '?';
-            clientName.textContent = 'Клиент не выбран';
-            clientHandle.textContent = 'Выберите диалог слева';
-            detailChannel.textContent = '-';
-            detailStatus.textContent = '-';
-            detailCreated.textContent = '-';
-            detailUpdated.textContent = '-';
-            operatorNote.value = '';
-            operatorNote.disabled = true;
-            return;
-        }
-
-        const title = item.visitor_name || item.visitor_handle || 'Клиент';
-        chatTitle.textContent = title;
-        chatSubtitle.textContent = item.visitor_handle || item.external_id || 'Диалог #' + item.id;
-        channelBadge.textContent = channelText(item.channel);
-        channelBadge.className = 'badge ' + item.channel;
-        statusBadge.textContent = statusText(item.status);
-        statusBadge.className = 'badge status-' + (item.status || 'open');
-        messageInput.disabled = disabled;
-        sendButton.disabled = disabled;
-        sendButton.textContent = sending ? 'Отправка' : 'Отправить';
-        messageInput.placeholder = item.status === 'closed' ? 'Диалог закрыт' : 'Ответить клиенту';
-
-        clientAvatar.textContent = initials(item);
-        clientName.textContent = title;
-        clientHandle.textContent = item.visitor_handle || item.external_id || 'Без контакта';
-        detailChannel.textContent = channelText(item.channel);
-        detailStatus.textContent = statusText(item.status);
-        detailCreated.textContent = formatDate(item.created_at);
-        detailUpdated.textContent = formatDate(item.updated_at);
-        operatorNote.disabled = false;
-        operatorNote.value = localStorage.getItem('support_note_' + item.id) || '';
-    }
-
-    function renderMessages(items) {
-        const signature = JSON.stringify(items.map((message) => [message.id, message.sender, message.body]));
-        if (signature === messageSignature) {
-            return;
-        }
-        messageSignature = signature;
-
-        if (items.length === 0) {
-            messages.innerHTML = '<div class="empty">Сообщений пока нет</div>';
-            return;
-        }
-
-        let lastDay = '';
-        messages.innerHTML = items.map((message) => {
-            const day = String(message.created_at || '').slice(0, 10);
-            const divider = day && day !== lastDay ? `<div class="day-divider">${escapeHtml(formatDate(message.created_at).split(',')[0] || day)}</div>` : '';
-            lastDay = day || lastDay;
-            const author = message.sender === 'support' ? 'Оператор' : message.sender === 'system' ? 'Система' : 'Клиент';
-            return `
-                ${divider}
-                <article class="message ${message.sender}">
-                    <div class="message-meta">${author} · ${escapeHtml(formatDate(message.created_at))}</div>
-                    <div class="message-body">${escapeHtml(message.body)}</div>
-                </article>
-            `;
-        }).join('');
-        messages.scrollTop = messages.scrollHeight;
-    }
-
-    function selectConversation(id) {
-        selectedId = id;
-        messageSignature = '';
-        const item = conversations.find((conversation) => Number(conversation.id) === Number(id));
-        setChatState(item);
-        renderConversations();
-        loadMessages();
-    }
-
-    function loadConversations() {
-        if (!token || loadingConversations) {
-            renderConversations();
-            return Promise.resolve();
-        }
-
-        loadingConversations = true;
-        return api('api/conversations.php' + currentQuery())
-            .then((data) => {
-                conversations = data.conversations || [];
-                const unreadTotal = conversations.reduce((sum, item) => sum + Number(item.unread_support || 0), 0);
-                if (lastUnreadTotal && unreadTotal > lastUnreadTotal) {
-                    playNotification();
-                }
-                lastUnreadTotal = unreadTotal;
-                updateTitle(unreadTotal);
-
-                if (selectedId && !conversations.some((item) => Number(item.id) === Number(selectedId))) {
-                    selectedId = null;
-                    selectedConversation = null;
-                    messageSignature = '';
-                    messages.innerHTML = '<div class="empty">Выберите диалог</div>';
-                }
-                if (!selectedId && conversations.length > 0) {
-                    selectedId = Number(conversations[0].id);
-                }
+    api('api/admin_login.php')
+        .then((data) => {
+            setAuthorizedState(Boolean(data.authenticated));
+            if (isAuthorized) {
+                loadConversations();
+            } else {
                 renderConversations();
-                if (selectedId) {
-                    const item = conversations.find((conversation) => Number(conversation.id) === Number(selectedId));
-                    setChatState(item);
-                    return loadMessages();
-                }
-                setChatState(null);
-                return null;
-            })
-            .catch((error) => {
-                conversationList.innerHTML = '<div class="empty">' + escapeHtml(error.message) + '</div>';
-            })
-            .finally(() => {
-                loadingConversations = false;
-            });
-    }
-
-    function loadMessages() {
-        if (!selectedId || !token) {
-            return Promise.resolve();
-        }
-
-        return api('api/messages.php?admin=1&conversation_id=' + encodeURIComponent(selectedId))
-            .then((data) => {
-                if (data.conversation) {
-                    selectedConversation = data.conversation;
-                    setChatState(data.conversation);
-                }
-                renderMessages(data.messages || []);
-            })
-            .catch((error) => {
-                messages.innerHTML = '<div class="empty">' + escapeHtml(error.message) + '</div>';
-            });
-    }
-
-    function autosize() {
-        messageInput.style.height = 'auto';
-        messageInput.style.height = Math.min(messageInput.scrollHeight, 160) + 'px';
-    }
-
-    function insertReply(text) {
-        if (!selectedConversation || selectedConversation.status === 'closed') return;
-        const current = messageInput.value.trim();
-        messageInput.value = current ? current + '\n' + text : text;
-        autosize();
-        messageInput.focus();
-    }
-
-    async function changeStatus(status) {
-        if (!selectedId || !token) return;
-        try {
-            await api('api/conversations.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ conversation_id: selectedId, status }),
-            });
-            messageSignature = '';
-            await loadConversations();
-        } catch (error) {
-            alert(error.message);
-        }
-    }
-
-    authForm.addEventListener('submit', (event) => {
-        event.preventDefault();
-        token = tokenInput.value.trim();
-        localStorage.setItem('support_admin_token', token);
-        selectedId = null;
-        selectedConversation = null;
-        messageSignature = '';
-        loadConversations();
-    });
-
-    function resetSelectionAndLoad() {
-        selectedId = null;
-        selectedConversation = null;
-        messageSignature = '';
-        messages.innerHTML = '<div class="empty">Выберите диалог</div>';
-        loadConversations();
-    }
-
-    searchInput.addEventListener('input', () => {
-        window.clearTimeout(searchInput._timer);
-        searchInput._timer = window.setTimeout(resetSelectionAndLoad, 250);
-    });
-    statusFilter.addEventListener('change', resetSelectionAndLoad);
-    channelFilter.addEventListener('change', resetSelectionAndLoad);
-
-    conversationList.addEventListener('click', (event) => {
-        const button = event.target.closest('.conversation');
-        if (button) {
-            selectConversation(Number(button.dataset.id));
-        }
-    });
-
-    quickReplies.addEventListener('click', (event) => {
-        const button = event.target.closest('[data-reply]');
-        if (button) insertReply(button.dataset.reply);
-    });
-
-    document.querySelectorAll('[data-status-action]').forEach((button) => {
-        button.addEventListener('click', () => changeStatus(button.dataset.statusAction));
-    });
-
-    soundToggle.addEventListener('click', () => {
-        soundEnabled = !soundEnabled;
-        localStorage.setItem('support_sound_enabled', soundEnabled ? '1' : '0');
-        soundToggle.textContent = soundEnabled ? 'Звук: вкл' : 'Звук: выкл';
-        if (soundEnabled) playNotification();
-    });
-
-    operatorNote.addEventListener('input', () => {
-        if (selectedId) {
-            localStorage.setItem('support_note_' + selectedId, operatorNote.value);
-        }
-    });
-
-    messageInput.addEventListener('input', autosize);
-    messageInput.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault();
-            composer.requestSubmit();
-        }
-    });
-
-    composer.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        const body = messageInput.value.trim();
-        if (!body || !selectedId || sending) {
-            return;
-        }
-
-        sending = true;
-        setChatState(selectedConversation);
-        try {
-            await api('api/messages.php?admin=1', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ conversation_id: selectedId, body }),
-            });
-            messageInput.value = '';
-            autosize();
-            messageSignature = '';
-            await loadMessages();
-            await loadConversations();
-        } catch (error) {
-            alert(error.message);
-        } finally {
-            sending = false;
-            setChatState(selectedConversation);
-        }
-    });
-
-    setInterval(loadConversations, 5000);
-    setInterval(loadMessages, 2500);
-    loadConversations();
+            }
+        })
+        .catch(() => {
+            setAuthorizedState(false);
+            renderConversations();
+        });
 }());
