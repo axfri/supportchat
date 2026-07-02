@@ -4,6 +4,10 @@ declare(strict_types=1);
 require_once __DIR__ . '/../../src/http.php';
 require_once __DIR__ . '/../../src/database.php';
 
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
+    support_chat_json(['ok' => true]);
+}
+
 support_chat_require_admin();
 
 $pdo = support_chat_db();
@@ -37,6 +41,11 @@ if ($method === 'GET') {
     }
 
     $whereSql = $where ? 'WHERE ' . implode(' AND ', $where) : '';
+    $limit = max(1, min(50, (int)($_GET['limit'] ?? 30)));
+    $offset = max(0, (int)($_GET['offset'] ?? 0));
+    $paramsWithPaging = $params;
+    $paramsWithPaging[] = $limit + 1;
+    $paramsWithPaging[] = $offset;
     $stmt = $pdo->prepare("
         SELECT
             c.*,
@@ -50,11 +59,15 @@ if ($method === 'GET') {
         )
         $whereSql
         ORDER BY c.updated_at DESC, c.id DESC
-        LIMIT 200
+        LIMIT ? OFFSET ?
     ");
-    $stmt->execute($params);
+    $stmt->execute($paramsWithPaging);
 
     $rows = $stmt->fetchAll();
+    $hasMore = count($rows) > $limit;
+    if ($hasMore) {
+        array_pop($rows);
+    }
     foreach ($rows as &$row) {
         $body = trim((string)($row['last_message'] ?? ''));
         $lastMessageId = (int)($row['last_message_id'] ?? 0);
@@ -80,7 +93,14 @@ if ($method === 'GET') {
     }
     unset($row);
     $conversations = array_map('support_chat_admin_conversation_payload', $rows);
-    support_chat_json(['ok' => true, 'conversations' => $conversations]);
+    support_chat_json([
+        'ok' => true,
+        'conversations' => $conversations,
+        'has_more' => $hasMore,
+        'limit' => $limit,
+        'offset' => $offset,
+        'next_offset' => $offset + count($conversations),
+    ]);
 }
 
 if ($method === 'POST') {

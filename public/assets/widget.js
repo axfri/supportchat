@@ -1,9 +1,10 @@
-(function () {
+﻿(function () {
     if (window.FArtSupportWidgetLoaded) return;
     window.FArtSupportWidgetLoaded = true;
 
     const apiBase = window.FArtSupportApiBase || '/support-chat/api/messages.php';
     const downloadBase = apiBase.replace(/messages\.php(?:.*)?$/, 'download.php');
+    const unreadBase = apiBase.replace(/messages\.php(?:.*)?$/, 'unread.php');
     const root = document.createElement('div');
     root.className = 'fscw-root';
     root.innerHTML = `
@@ -20,16 +21,22 @@
                 </div>
                 <div class="fscw-actions">
                     <span class="fscw-status">online</span>
-                    <a class="fscw-full-link" href="/support-chat/support.php" target="_blank" rel="noopener">Диалог</a>
+                    <a class="fscw-full-link" href="/checkbot/cabinet/#support">Диалог</a>
                     <button class="fscw-close" type="button">\u0421\u0432\u0435\u0440\u043d\u0443\u0442\u044c</button>
                 </div>
             </header>
             <div class="fscw-messages"></div>
             <form class="fscw-composer">
-                <textarea class="fscw-input" rows="2" placeholder="\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435"></textarea>
                 <input class="fscw-file-input" type="file" multiple accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.mp4,.webm,.mov,.mkv,.avi,.zip,.rar,.7z,.tar,.gz,.tgz" hidden>
-                <button class="fscw-attach" type="button" title="\u041f\u0440\u0438\u043a\u0440\u0435\u043f\u0438\u0442\u044c \u0444\u0430\u0439\u043b" aria-label="\u041f\u0440\u0438\u043a\u0440\u0435\u043f\u0438\u0442\u044c \u0444\u0430\u0439\u043b">\uD83D\uDCCE</button>
+                <button class="fscw-attach" type="button" title="Добавить файл" aria-label="Добавить файл">
+                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <path d="M7.2 13.1 13.8 6.5a3.3 3.3 0 0 1 4.7 4.7l-8.2 8.2a5.1 5.1 0 0 1-7.2-7.2l8.5-8.5"></path>
+                    </svg>
+                </button>
+                <button class="fscw-emoji" type="button" title="Вставить эмодзи" aria-label="Вставить эмодзи">☺</button>
+                <textarea class="fscw-input" rows="2" placeholder="\u0412\u0432\u0435\u0434\u0438\u0442\u0435 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435"></textarea>
                 <button class="fscw-send" type="submit">\u041e\u0442\u043f\u0440\u0430\u0432\u0438\u0442\u044c</button>
+                <div class="fscw-emoji-picker" hidden></div>
                 <div class="fscw-file-preview"></div>
             </form>
         </section>
@@ -45,17 +52,39 @@
     const input = root.querySelector('.fscw-input');
     const send = root.querySelector('.fscw-send');
     const attach = root.querySelector('.fscw-attach');
+    const emojiButton = root.querySelector('.fscw-emoji');
+    const emojiPicker = root.querySelector('.fscw-emoji-picker');
     const fileInput = root.querySelector('.fscw-file-input');
     const filePreview = root.querySelector('.fscw-file-preview');
     const status = root.querySelector('.fscw-status');
     const subtitle = root.querySelector('.fscw-subtitle');
 
     let signature = '';
-    let lastSupportCount = 0;
     let sending = false;
     let selectedFiles = [];
     let pollTimer = null;
     let loadedOnce = false;
+    let loadedMessages = [];
+    let hasMoreBefore = false;
+    let loadingOlder = false;
+    const emojiList = ['😀','🙂','👍','🙏','✅','🔥','❤️','😎','🤝','📎'];
+
+    function supportUser() {
+        const user = window.FArtSupportUser || {};
+        return {
+            visitor_name: String(user.visitor_name || user.name || user.display_name || '').trim(),
+            visitor_user_id: String(user.visitor_user_id || user.user_id || user.id || '').trim(),
+            visitor_email: String(user.visitor_email || user.email || '').trim(),
+            visitor_balance: String(user.visitor_balance ?? user.balance ?? '').trim(),
+        };
+    }
+
+    function appendSupportUser(formData) {
+        const user = supportUser();
+        Object.keys(user).forEach((key) => {
+            if (user[key]) formData.append(key, user[key]);
+        });
+    }
 
     function escapeHtml(value) {
         return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
@@ -102,6 +131,36 @@
         input.style.height = Math.min(input.scrollHeight, 138) + 'px';
     }
 
+    function insertAtCursor(text) {
+        const start = input.selectionStart || 0;
+        const end = input.selectionEnd || 0;
+        input.value = input.value.slice(0, start) + text + input.value.slice(end);
+        input.selectionStart = input.selectionEnd = start + text.length;
+        input.focus();
+        autosize();
+    }
+
+    function openFileModal(url, name, type) {
+        let modal = document.querySelector('.fscw-file-modal');
+        if (!modal) {
+            modal = document.createElement('div');
+            modal.className = 'fscw-file-modal';
+            modal.hidden = true;
+            modal.innerHTML = '<div class="fscw-file-modal__backdrop" data-close></div><section class="fscw-file-modal__panel"><button type="button" data-close class="fscw-file-modal__close">x</button><div class="fscw-file-modal__body"></div><a class="fscw-file-modal__download" href="#" download>Скачать</a></section>';
+            root.appendChild(modal);
+            modal.querySelectorAll('[data-close]').forEach((item) => item.addEventListener('click', () => {
+                modal.hidden = true;
+                modal.querySelector('.fscw-file-modal__body').innerHTML = '';
+            }));
+        }
+        modal.querySelector('.fscw-file-modal__download').href = url.replace('&inline=1', '');
+        modal.querySelector('.fscw-file-modal__download').download = name || 'file';
+        modal.querySelector('.fscw-file-modal__body').innerHTML = type === 'video'
+            ? '<video controls autoplay src="' + url + '"></video>'
+            : '<img src="' + url + '" alt="' + escapeHtml(name || 'file') + '">';
+        modal.hidden = false;
+    }
+
     function startPolling() {
         if (!loadedOnce) {
             loadedOnce = true;
@@ -115,6 +174,7 @@
             clearInterval(pollTimer);
             pollTimer = null;
         }
+        loadUnread();
     }
 
     function setOpen(open) {
@@ -138,10 +198,10 @@
             const inlineUrl = url + '&inline=1';
             const type = String(att.mime_type || '');
             if (type.startsWith('image/')) {
-                return '<a class="fscw-attachment-image" href="' + inlineUrl + '" target="_blank" title="' + name + '"><img src="' + inlineUrl + '" alt="' + name + '"></a>';
+                return '<button type="button" class="fscw-attachment-image" data-preview-url="' + inlineUrl + '" data-preview-type="image" data-preview-name="' + name + '" title="' + name + '"><img src="' + inlineUrl + '" alt="' + name + '"></button>';
             }
             if (type.startsWith('video/')) {
-                return '<video class="fscw-attachment-video" controls preload="metadata"><source src="' + inlineUrl + '" type="' + escapeHtml(type) + '"></video>';
+                return '<button type="button" class="fscw-attachment-video-button" data-preview-url="' + inlineUrl + '" data-preview-type="video" data-preview-name="' + name + '">▶ ' + name + '</button>';
             }
             return '<a class="fscw-attachment-file" href="' + url + '" download="' + name + '" title="' + name + '">\uD83D\uDCCE ' + name + '</a>';
         }).join('') + '</div>';
@@ -157,16 +217,12 @@
         filePreview.innerHTML = selectedFiles.map((file, index) => '<span class="fscw-file-chip">' + escapeHtml(file.name) + '<button type="button" data-file-index="' + index + '">x</button></span>').join('');
     }
 
-    function render(items) {
+    function render(items, keepScroll = false) {
+        const previousHeight = messages.scrollHeight;
+        const previousTop = messages.scrollTop;
         const nextSignature = JSON.stringify(items.map((message) => [message.id, message.sender, message.body, message.delivery_error || '', (message.attachments || []).map(a => [a.id, a.original_filename, a.mime_type].join(':')).join(','), message.is_deleted_by_visitor, message.is_deleted_for_user]));
         if (nextSignature === signature) return;
         signature = nextSignature;
-
-        const supportCount = items.filter((message) => message.sender === 'support').length;
-        if (!panel.classList.contains('is-open') && supportCount > lastSupportCount) {
-            count.textContent = String(supportCount - lastSupportCount);
-        }
-        lastSupportCount = supportCount;
 
         if (items.length === 0) {
             messages.innerHTML = '<div class="fscw-welcome"><strong>\u0417\u0434\u0440\u0430\u0432\u0441\u0442\u0432\u0443\u0439\u0442\u0435!</strong><span>\u041e\u043f\u0438\u0448\u0438\u0442\u0435 \u0432\u043e\u043f\u0440\u043e\u0441 \u043e\u0434\u043d\u0438\u043c \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u0435\u043c, \u043e\u043f\u0435\u0440\u0430\u0442\u043e\u0440 \u043e\u0442\u0432\u0435\u0442\u0438\u0442 \u0432 \u044d\u0442\u043e\u043c \u0447\u0430\u0442\u0435.</span></div>';
@@ -176,12 +232,12 @@
         messages.innerHTML = items.map((message) => {
             const cls = message.sender === 'support' ? ' is-support' : message.sender === 'system' ? ' is-system' : ' is-visitor';
             const author = message.sender === 'support' ? '\u041f\u043e\u0434\u0434\u0435\u0440\u0436\u043a\u0430' : message.sender === 'system' ? '\u0421\u0438\u0441\u0442\u0435\u043c\u0430' : '\u0412\u044b';
-            const deleted = message.is_deleted_by_visitor ? '<em>Сообщение удалено</em>' : messageBodyText(message);
+            const deleted = message.is_deleted_for_user ? '<em>Сообщение удалено</em>' : messageBodyText(message);
             const errorClass = message.delivery_error ? ' has-delivery-error' : '';
-            const errorNote = message.delivery_error && !message.is_deleted_by_visitor ? '<div class="fscw-message-error">Ошибка доставки: ' + escapeHtml(message.delivery_error) + '</div>' : '';
-            return '<article class="fscw-message' + cls + errorClass + '"><div class="fscw-body">' + deleted + '</div>' + errorNote + (!message.is_deleted_by_visitor ? renderAttachments(message.attachments || []) : '') + '<div class="fscw-meta">' + author + ' · ' + escapeHtml(time(message.created_at)) + '</div></article>';
+            const errorNote = message.delivery_error && !message.is_deleted_for_user ? '<div class="fscw-message-error">Ошибка доставки: ' + escapeHtml(message.delivery_error) + '</div>' : '';
+            return '<article class="fscw-message' + cls + errorClass + '"><div class="fscw-body">' + deleted + '</div>' + errorNote + (!message.is_deleted_for_user ? renderAttachments(message.attachments || []) : '') + '<div class="fscw-meta">' + author + ' · ' + escapeHtml(time(message.created_at)) + '</div></article>';
         }).join('');
-        messages.scrollTop = messages.scrollHeight;
+        messages.scrollTop = keepScroll ? messages.scrollHeight - previousHeight + previousTop : messages.scrollHeight;
     }
 
     function applyState(conversation) {
@@ -197,18 +253,39 @@
         }
     }
 
-    function load() {
-        return fetch(apiBase, { credentials: 'same-origin' })
+    function load(beforeId = 0) {
+        const url = beforeId > 0 ? apiBase + (apiBase.includes('?') ? '&' : '?') + 'before_id=' + encodeURIComponent(beforeId) : apiBase;
+        return fetch(url, { credentials: 'include' })
             .then((response) => response.json())
             .then((data) => {
                 if (!data.ok) throw new Error(data.error || '\u041e\u0448\u0438\u0431\u043a\u0430 \u0437\u0430\u0433\u0440\u0443\u0437\u043a\u0438');
                 applyState(data.conversation);
-                render(data.messages || []);
+                const unread = Number(data.conversation?.unread_visitor || 0);
+                count.textContent = !panel.classList.contains('is-open') && unread > 0 ? String(unread) : '';
+                hasMoreBefore = Boolean(data.has_more_before);
+                if (beforeId > 0) {
+                    loadedMessages = (data.messages || []).concat(loadedMessages);
+                    render(loadedMessages, true);
+                } else {
+                    loadedMessages = data.messages || [];
+                    render(loadedMessages);
+                }
             })
             .catch(() => {
                 status.textContent = 'offline';
                 subtitle.textContent = '\u041f\u0440\u043e\u0431\u043b\u0435\u043c\u0430 \u0441\u043e\u0435\u0434\u0438\u043d\u0435\u043d\u0438\u044f, \u043f\u0440\u043e\u0431\u0443\u0435\u043c \u043e\u0431\u043d\u043e\u0432\u0438\u0442\u044c \u0447\u0430\u0442';
             });
+    }
+
+    function loadUnread() {
+        return fetch(unreadBase, { credentials: 'include' })
+            .then((response) => response.json())
+            .then((data) => {
+                if (!data.ok) return;
+                const unread = Number(data.unread || 0);
+                count.textContent = !panel.classList.contains('is-open') && unread > 0 ? String(unread) : '';
+            })
+            .catch(() => {});
     }
 
     async function sendMessage(body) {
@@ -221,8 +298,9 @@
         try {
             const formData = new FormData();
             formData.append('body', body);
+            appendSupportUser(formData);
             selectedFiles.forEach((file) => formData.append('files[]', file));
-            const response = await fetch(apiBase, { method: 'POST', credentials: 'same-origin', body: formData });
+            const response = await fetch(apiBase, { method: 'POST', credentials: 'include', body: formData });
             const data = await response.json();
             if (!data.ok) throw new Error(data.error || '\u041e\u0448\u0438\u0431\u043a\u0430 \u043e\u0442\u043f\u0440\u0430\u0432\u043a\u0438');
             input.value = '';
@@ -246,6 +324,28 @@
     launcher.addEventListener('click', () => setOpen(true));
     close.addEventListener('click', () => setOpen(false));
     attach.addEventListener('click', () => fileInput.click());
+    emojiPicker.innerHTML = emojiList.map((emoji) => '<button type="button" data-emoji="' + emoji + '">' + emoji + '</button>').join('');
+    emojiButton.addEventListener('click', () => {
+        emojiPicker.hidden = !emojiPicker.hidden;
+    });
+    emojiPicker.addEventListener('click', (event) => {
+        const button = event.target.closest('[data-emoji]');
+        if (!button) return;
+        insertAtCursor(button.dataset.emoji);
+        emojiPicker.hidden = true;
+    });
+    messages.addEventListener('click', (event) => {
+        const preview = event.target.closest('[data-preview-url]');
+        if (!preview) return;
+        openFileModal(preview.dataset.previewUrl, preview.dataset.previewName, preview.dataset.previewType);
+    });
+    messages.addEventListener('scroll', () => {
+        if (!hasMoreBefore || loadingOlder || messages.scrollTop > 60 || loadedMessages.length === 0) return;
+        loadingOlder = true;
+        load(Number(loadedMessages[0].id || 0)).finally(() => {
+            loadingOlder = false;
+        });
+    });
     fileInput.addEventListener('change', (event) => {
         selectedFiles = Array.from(event.target.files || []);
         updateFilePreview();
@@ -274,5 +374,7 @@
     observer.observe(document.documentElement, { attributes: true, attributeFilter: ['class', 'data-theme'] });
     observer.observe(document.body, { attributes: true, attributeFilter: ['class', 'data-theme'] });
     window.addEventListener('storage', applyWidgetTheme);
+    setInterval(loadUnread, 5000);
+    loadUnread();
     autosize();
 }());

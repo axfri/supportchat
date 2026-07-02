@@ -34,6 +34,9 @@ function support_chat_migrate(PDO $pdo): void
             external_id TEXT,
             visitor_name TEXT NOT NULL DEFAULT '',
             visitor_handle TEXT NOT NULL DEFAULT '',
+            visitor_user_id TEXT NOT NULL DEFAULT '',
+            visitor_email TEXT NOT NULL DEFAULT '',
+            balance REAL NOT NULL DEFAULT 0,
             status TEXT NOT NULL DEFAULT 'open',
             unread_support INTEGER NOT NULL DEFAULT 0,
             unread_visitor INTEGER NOT NULL DEFAULT 0,
@@ -61,6 +64,18 @@ function support_chat_migrate(PDO $pdo): void
 
     $columns = $pdo->query('PRAGMA table_info(messages)')->fetchAll();
     $columnNames = array_map(static fn($column) => $column['name'], $columns);
+    $conversationColumns = $pdo->query('PRAGMA table_info(conversations)')->fetchAll();
+    $conversationColumnNames = array_map(static fn($column) => $column['name'], $conversationColumns);
+
+    foreach ([
+        'visitor_user_id' => "TEXT NOT NULL DEFAULT ''",
+        'visitor_email' => "TEXT NOT NULL DEFAULT ''",
+        'balance' => "REAL NOT NULL DEFAULT 0",
+    ] as $name => $definition) {
+        if (!in_array($name, $conversationColumnNames, true)) {
+            $pdo->exec("ALTER TABLE conversations ADD COLUMN {$name} {$definition}");
+        }
+    }
 
     if (!in_array('is_deleted_by_visitor', $columnNames, true)) {
         $pdo->exec('ALTER TABLE messages ADD COLUMN is_deleted_by_visitor INTEGER NOT NULL DEFAULT 0');
@@ -101,6 +116,66 @@ function support_chat_migrate(PDO $pdo): void
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_conversations_updated ON conversations(updated_at DESC)');
     $pdo->exec('CREATE INDEX IF NOT EXISTS idx_attachments_message ON attachments(message_id)');
     $pdo->exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_telegram_unique ON messages(conversation_id, telegram_message_id) WHERE telegram_message_id IS NOT NULL AND telegram_message_id != ''");
+
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS support_staff (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            login TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            role TEXT NOT NULL CHECK(role IN ('admin', 'manager')),
+            is_blocked INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    ");
+
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS telegram_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            direction TEXT NOT NULL,
+            action TEXT NOT NULL,
+            telegram_chat_id TEXT NOT NULL DEFAULT '',
+            telegram_message_id TEXT NOT NULL DEFAULT '',
+            conversation_id INTEGER,
+            payload TEXT NOT NULL DEFAULT '',
+            result TEXT NOT NULL DEFAULT '',
+            success INTEGER NOT NULL DEFAULT 0,
+            error TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+    ");
+
+    $pdo->exec("
+        CREATE TABLE IF NOT EXISTS balance_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id INTEGER NOT NULL,
+            staff_id INTEGER,
+            old_balance REAL NOT NULL,
+            new_balance REAL NOT NULL,
+            comment TEXT NOT NULL DEFAULT '',
+            created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE,
+            FOREIGN KEY(staff_id) REFERENCES support_staff(id) ON DELETE SET NULL
+        )
+    ");
+
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_telegram_logs_created ON telegram_logs(created_at DESC, id DESC)');
+    $pdo->exec('CREATE INDEX IF NOT EXISTS idx_balance_history_conversation ON balance_history(conversation_id, id DESC)');
+
+    $legacyLogin = support_chat_env('SUPPORT_ADMIN_LOGIN', 'admin');
+    $legacyPassword = support_chat_env('SUPPORT_ADMIN_PASSWORD', support_chat_env('SUPPORT_ADMIN_TOKEN'));
+    $legacyHash = support_chat_env('SUPPORT_ADMIN_PASSWORD_HASH');
+    if ($legacyLogin !== '' && ($legacyHash !== '' || $legacyPassword !== '')) {
+        $exists = $pdo->prepare('SELECT 1 FROM support_staff WHERE login = ? LIMIT 1');
+        $exists->execute([$legacyLogin]);
+        if (!$exists->fetchColumn()) {
+            $hash = $legacyHash !== '' ? $legacyHash : password_hash($legacyPassword, PASSWORD_DEFAULT);
+            $insert = $pdo->prepare("INSERT INTO support_staff (login, password_hash, role, is_blocked) VALUES (?, ?, 'admin', 0)");
+            $insert->execute([$legacyLogin, $hash]);
+        }
+    }
+
+    $pdo->exec("UPDATE conversations SET visitor_name = 'Пользователь #' || id WHERE channel = 'web' AND (visitor_name = '' OR visitor_name = 'Посетитель сайта')");
 }
 
 function support_chat_statuses(): array
@@ -127,11 +202,37 @@ function support_chat_get_conversation(PDO $pdo, int $id): ?array
 function support_chat_admin_conversation_payload(array $conversation): array
 {
     $conversation['dialog_id'] = (int)($conversation['id'] ?? 0);
+    $conversation['display_name'] = support_chat_conversation_display_name($conversation);
     if (($conversation['channel'] ?? '') === 'web') {
         $conversation['external_id'] = '';
         $conversation['visitor_handle'] = '';
     }
     return $conversation;
+}
+
+function support_chat_conversation_display_name(array $conversation): string
+{
+    $name = trim((string)($conversation['visitor_name'] ?? ''));
+    if ($name !== '' && $name !== 'Посетитель сайта') {
+        return $name;
+    }
+
+    $handle = trim((string)($conversation['visitor_handle'] ?? ''));
+    if ($handle !== '') {
+        return $handle;
+    }
+
+    $email = trim((string)($conversation['visitor_email'] ?? ''));
+    if ($email !== '') {
+        return $email;
+    }
+
+    $userId = trim((string)($conversation['visitor_user_id'] ?? ''));
+    if ($userId !== '') {
+        return 'Пользователь #' . $userId;
+    }
+
+    return 'Пользователь #' . (int)($conversation['id'] ?? 0);
 }
 
 function support_chat_update_conversation_status(PDO $pdo, int $id, string $status, bool $addSystemMessage = true): array
@@ -220,9 +321,46 @@ function support_chat_find_or_create_web_conversation(PDO $pdo, string $sessionI
         return (int)$id;
     }
 
-    $stmt = $pdo->prepare("INSERT INTO conversations (channel, external_id, visitor_name, status) VALUES ('web', ?, ?, 'new')");
-    $stmt->execute([$sessionId, 'Посетитель сайта']);
-    return (int)$pdo->lastInsertId();
+    $stmt = $pdo->prepare("INSERT INTO conversations (channel, external_id, visitor_name, status) VALUES ('web', ?, '', 'new')");
+    $stmt->execute([$sessionId]);
+    $id = (int)$pdo->lastInsertId();
+    $pdo->prepare('UPDATE conversations SET visitor_name = ? WHERE id = ?')->execute(['Пользователь #' . $id, $id]);
+    return $id;
+}
+
+function support_chat_update_web_conversation_profile(PDO $pdo, int $conversationId, array $profile): void
+{
+    $name = trim((string)($profile['visitor_name'] ?? $profile['name'] ?? ''));
+    $userId = trim((string)($profile['visitor_user_id'] ?? $profile['user_id'] ?? ''));
+    $email = trim((string)($profile['visitor_email'] ?? $profile['email'] ?? ''));
+    if ($name === '' && $userId === '' && $email === '') {
+        return;
+    }
+
+    if (mb_strlen($name, 'UTF-8') > 120) {
+        $name = mb_substr($name, 0, 120, 'UTF-8');
+    }
+    if (strlen($userId) > 80) {
+        $userId = substr($userId, 0, 80);
+    }
+    if (mb_strlen($email, 'UTF-8') > 160) {
+        $email = mb_substr($email, 0, 160, 'UTF-8');
+    }
+
+    $conversation = support_chat_get_conversation($pdo, $conversationId);
+    if ($conversation === null || ($conversation['channel'] ?? '') !== 'web') {
+        return;
+    }
+
+    $nextName = $name !== '' ? $name : (string)($conversation['visitor_name'] ?? '');
+    $nextUserId = $userId !== '' ? $userId : (string)($conversation['visitor_user_id'] ?? '');
+    $nextEmail = $email !== '' ? $email : (string)($conversation['visitor_email'] ?? '');
+    $stmt = $pdo->prepare('
+        UPDATE conversations
+        SET visitor_name = ?, visitor_user_id = ?, visitor_email = ?, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+    ');
+    $stmt->execute([$nextName, $nextUserId, $nextEmail, $conversationId]);
 }
 
 function support_chat_find_web_conversation(PDO $pdo, string $sessionId): ?int
@@ -259,9 +397,33 @@ function support_chat_telegram_profile(array $message): ?array
     $name = trim((string)($chat['first_name'] ?? '') . ' ' . (string)($chat['last_name'] ?? ''));
     return [
         'chat_id' => (string)$chat['id'],
-        'name' => $name !== '' ? $name : 'Telegram user',
+        'name' => $name !== '' ? $name : 'Telegram #' . (string)$chat['id'],
         'handle' => isset($chat['username']) ? '@' . (string)$chat['username'] : '',
     ];
+}
+
+function support_chat_log_telegram(PDO $pdo, string $direction, string $action, array $context = []): void
+{
+    try {
+        $stmt = $pdo->prepare('
+            INSERT INTO telegram_logs
+                (direction, action, telegram_chat_id, telegram_message_id, conversation_id, payload, result, success, error)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ');
+        $stmt->execute([
+            $direction,
+            $action,
+            (string)($context['chat_id'] ?? ''),
+            (string)($context['message_id'] ?? ''),
+            isset($context['conversation_id']) ? (int)$context['conversation_id'] : null,
+            json_encode($context['payload'] ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            json_encode($context['result'] ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            !empty($context['success']) ? 1 : 0,
+            (string)($context['error'] ?? ''),
+        ]);
+    } catch (Throwable $e) {
+        support_chat_log_error('Telegram DB log failed: ' . $e->getMessage());
+    }
 }
 
 function support_chat_telegram_start_text(): string
@@ -278,6 +440,11 @@ function support_chat_handle_telegram_message(PDO $pdo, array $message): array
 {
     $profile = support_chat_telegram_profile($message);
     if ($profile === null) {
+        support_chat_log_telegram($pdo, 'incoming', 'profile_parse', [
+            'payload' => $message,
+            'success' => false,
+            'error' => 'Telegram profile was not found',
+        ]);
         return ['stored' => false, 'reply' => null];
     }
 
@@ -286,14 +453,33 @@ function support_chat_handle_telegram_message(PDO $pdo, array $message): array
     $command = preg_replace('/@.+$/', '', $command);
 
     if ($command === '/start') {
+        support_chat_log_telegram($pdo, 'incoming', 'command_start', [
+            'chat_id' => $profile['chat_id'],
+            'message_id' => (string)($message['message_id'] ?? ''),
+            'payload' => $message,
+            'success' => true,
+        ]);
         return ['stored' => false, 'reply' => support_chat_telegram_start_text()];
     }
 
     if ($command === '/help') {
+        support_chat_log_telegram($pdo, 'incoming', 'command_help', [
+            'chat_id' => $profile['chat_id'],
+            'message_id' => (string)($message['message_id'] ?? ''),
+            'payload' => $message,
+            'success' => true,
+        ]);
         return ['stored' => false, 'reply' => support_chat_telegram_help_text()];
     }
 
     if ($text !== '' && strpos($text, '/') === 0) {
+        support_chat_log_telegram($pdo, 'incoming', 'command_unknown', [
+            'chat_id' => $profile['chat_id'],
+            'message_id' => (string)($message['message_id'] ?? ''),
+            'payload' => $message,
+            'success' => false,
+            'error' => 'Unknown command',
+        ]);
         return ['stored' => false, 'reply' => 'Неизвестная команда. Нажмите /help, чтобы посмотреть список команд.'];
     }
 
@@ -327,12 +513,36 @@ function support_chat_ingest_telegram_message(PDO $pdo, array $message): ?int
     $telegramMessageId = isset($message['message_id']) ? (string)$message['message_id'] : null;
     $conversationId = support_chat_find_or_create_telegram_conversation($pdo, $profile['chat_id'], $profile['name'], $profile['handle']);
     if (support_chat_telegram_message_exists($pdo, $conversationId, $telegramMessageId)) {
+        support_chat_log_telegram($pdo, 'incoming', 'duplicate_message', [
+            'chat_id' => $profile['chat_id'],
+            'message_id' => (string)$telegramMessageId,
+            'conversation_id' => $conversationId,
+            'payload' => $message,
+            'success' => true,
+        ]);
         return null;
     }
 
     $messageId = support_chat_add_message($pdo, $conversationId, 'visitor', $text, $telegramMessageId);
     if ($messageId > 0) {
         support_chat_store_telegram_attachments($pdo, $messageId, $message);
+        support_chat_log_telegram($pdo, 'incoming', 'message_stored', [
+            'chat_id' => $profile['chat_id'],
+            'message_id' => (string)$telegramMessageId,
+            'conversation_id' => $conversationId,
+            'payload' => $message,
+            'result' => ['support_message_id' => $messageId],
+            'success' => true,
+        ]);
+    } else {
+        support_chat_log_telegram($pdo, 'incoming', 'message_not_stored', [
+            'chat_id' => $profile['chat_id'],
+            'message_id' => (string)$telegramMessageId,
+            'conversation_id' => $conversationId,
+            'payload' => $message,
+            'success' => false,
+            'error' => 'support_chat_add_message returned 0',
+        ]);
     }
 
     return $messageId;
@@ -399,6 +609,13 @@ function support_chat_store_telegram_attachments(PDO $pdo, int $messageId, array
                 'message_id' => $messageId,
                 'download_error' => $download,
             ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND | LOCK_EX);
+            support_chat_log_telegram($pdo, 'incoming', 'attachment_download_failed', [
+                'message_id' => (string)($message['message_id'] ?? ''),
+                'payload' => $item,
+                'result' => $download,
+                'success' => false,
+                'error' => (string)($download['description'] ?? 'Download failed'),
+            ]);
             continue;
         }
 
@@ -407,6 +624,12 @@ function support_chat_store_telegram_attachments(PDO $pdo, int $messageId, array
         } catch (Throwable $e) {
             @unlink($tmpPath);
             support_chat_log_error('Failed to store Telegram attachment: ' . $e->getMessage());
+            support_chat_log_telegram($pdo, 'incoming', 'attachment_store_failed', [
+                'message_id' => (string)($message['message_id'] ?? ''),
+                'payload' => $item,
+                'success' => false,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 }
@@ -558,25 +781,7 @@ function support_chat_get_attachment_path(string $filename): string
 
 function support_chat_delete_message_by_visitor(PDO $pdo, int $messageId, string $visitorSessionId): bool
 {
-    $stmt = $pdo->prepare('
-        SELECT m.id, m.sender, c.channel, c.external_id
-        FROM messages m
-        JOIN conversations c ON m.conversation_id = c.id
-        WHERE m.id = ? LIMIT 1
-    ');
-    $stmt->execute([$messageId]);
-    $message = $stmt->fetch();
-
-    if (!$message) {
-        throw new InvalidArgumentException('Message not found');
-    }
-
-    if ($message['channel'] !== 'web' || $message['external_id'] !== $visitorSessionId || $message['sender'] !== 'visitor') {
-        throw new InvalidArgumentException('Unauthorized');
-    }
-
-    $stmt = $pdo->prepare('UPDATE messages SET is_deleted_by_visitor = 1, deleted_at = CURRENT_TIMESTAMP WHERE id = ?');
-    return $stmt->execute([$messageId]);
+    return false;
 }
 
 function support_chat_delete_message_for_user(PDO $pdo, int $messageId): bool

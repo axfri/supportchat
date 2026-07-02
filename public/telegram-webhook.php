@@ -33,10 +33,25 @@ try {
     $pdo = support_chat_db();
     $result = support_chat_handle_telegram_message($pdo, $message);
     if (!empty($result['reply']) && isset($message['chat']['id'])) {
-        support_chat_telegram_send((string)$message['chat']['id'], (string)$result['reply']);
+        $response = support_chat_telegram_send((string)$message['chat']['id'], (string)$result['reply']);
+        support_chat_log_telegram($pdo, 'outgoing', 'command_reply', [
+            'chat_id' => (string)$message['chat']['id'],
+            'message_id' => (string)($response['result']['message_id'] ?? ''),
+            'payload' => ['text' => (string)$result['reply']],
+            'result' => $response,
+            'success' => !empty($response['ok']),
+            'error' => empty($response['ok']) ? (string)($response['description'] ?? 'Telegram request failed') : '',
+        ]);
     }
 } catch (Throwable $e) {
     support_chat_log_error('Webhook handler error: ' . $e->getMessage());
+    if (isset($pdo) && $pdo instanceof PDO) {
+        support_chat_log_telegram($pdo, 'incoming', 'webhook_error', [
+            'payload' => is_array($message ?? null) ? $message : $update,
+            'success' => false,
+            'error' => $e->getMessage(),
+        ]);
+    }
 }
 
 support_chat_json(['ok' => true]);

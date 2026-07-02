@@ -20,6 +20,9 @@
     };
 
     let messageSignature = '';
+    let loadedMessages = [];
+    let hasMoreBefore = false;
+    let loadingOlder = false;
 
     function getSavedTheme() {
         return localStorage.getItem(THEME_STORAGE_KEY);
@@ -70,11 +73,26 @@
         }
     }
 
-    let lastSupportCount = 0;
     let sending = false;
     let selectedFiles = [];
-    let pendingDeleteMessageId = null;
-    let pendingDeleteButton = null;
+    const emojiList = ['😀','🙂','👍','🙏','✅','🔥','❤️','😎','🤝','📎'];
+
+    function supportUser() {
+        const user = window.FArtSupportUser || {};
+        return {
+            visitor_name: String(user.visitor_name || user.name || user.display_name || '').trim(),
+            visitor_user_id: String(user.visitor_user_id || user.user_id || user.id || '').trim(),
+            visitor_email: String(user.visitor_email || user.email || '').trim(),
+            visitor_balance: String(user.visitor_balance ?? user.balance ?? '').trim(),
+        };
+    }
+
+    function appendSupportUser(formData) {
+        const user = supportUser();
+        Object.keys(user).forEach((key) => {
+            if (user[key]) formData.append(key, user[key]);
+        });
+    }
 
     function escapeHtml(value) {
         return String(value || '')
@@ -113,6 +131,83 @@
             return 'Файл: ' + escapeHtml(att.original_filename || 'файл');
         }
         return 'Файлы: ' + attachments.length;
+    }
+
+    function insertAtCursor(input, text) {
+        const start = input.selectionStart || 0;
+        const end = input.selectionEnd || 0;
+        input.value = input.value.slice(0, start) + text + input.value.slice(end);
+        input.selectionStart = input.selectionEnd = start + text.length;
+        input.focus();
+        autosize();
+    }
+
+    function initEmojiPicker() {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'emoji-button';
+        button.title = 'Вставить эмодзи';
+        button.setAttribute('aria-label', 'Вставить эмодзи');
+        button.textContent = '☺';
+
+        const picker = document.createElement('div');
+        picker.className = 'emoji-picker';
+        picker.hidden = true;
+        picker.innerHTML = emojiList.map((emoji) => `<button type="button" data-emoji="${emoji}">${emoji}</button>`).join('');
+        composer.insertBefore(button, messageInput);
+        composer.appendChild(picker);
+
+        button.addEventListener('click', () => {
+            picker.hidden = !picker.hidden;
+        });
+        picker.addEventListener('click', (event) => {
+            const option = event.target.closest('[data-emoji]');
+            if (!option) return;
+            insertAtCursor(messageInput, option.dataset.emoji);
+            picker.hidden = true;
+        });
+        document.addEventListener('click', (event) => {
+            if (!picker.hidden && !picker.contains(event.target) && event.target !== button) {
+                picker.hidden = true;
+            }
+        });
+    }
+
+    function ensureFileModal() {
+        let modal = document.getElementById('supportFileModal');
+        if (modal) return modal;
+        modal = document.createElement('div');
+        modal.id = 'supportFileModal';
+        modal.className = 'file-view-modal';
+        modal.hidden = true;
+        modal.innerHTML = `
+            <div class="file-view-modal__backdrop" data-file-close></div>
+            <section class="file-view-modal__panel" role="dialog" aria-modal="true">
+                <button type="button" class="file-view-modal__close" data-file-close aria-label="Закрыть">x</button>
+                <div class="file-view-modal__body"></div>
+                <a class="file-view-modal__download" href="#" download>Скачать</a>
+            </section>
+        `;
+        document.body.appendChild(modal);
+        modal.querySelectorAll('[data-file-close]').forEach((item) => item.addEventListener('click', () => {
+            modal.hidden = true;
+            modal.querySelector('.file-view-modal__body').innerHTML = '';
+        }));
+        return modal;
+    }
+
+    function openFileModal(url, name, type) {
+        const modal = ensureFileModal();
+        const body = modal.querySelector('.file-view-modal__body');
+        const download = modal.querySelector('.file-view-modal__download');
+        download.href = url.replace('&inline=1', '').replace('?inline=1', '');
+        download.download = name || 'file';
+        if (type === 'video') {
+            body.innerHTML = `<video controls autoplay src="${url}"></video>`;
+        } else {
+            body.innerHTML = `<img src="${url}" alt="${escapeHtml(name || 'file')}">`;
+        }
+        modal.hidden = false;
     }
 
     function autosize() {
@@ -166,14 +261,11 @@
             const isVideo = ['mp4', 'webm', 'mov', 'mkv', 'avi'].includes(ext);
 
             if (isImage) {
-                return `<a href="api/download.php?id=${att.id}&inline=1" class="attachment-image" title="${escapeHtml(att.original_filename)}" target="_blank">
+                return `<button type="button" data-preview-url="api/download.php?id=${att.id}&inline=1" data-preview-type="image" data-preview-name="${escapeHtml(att.original_filename)}" class="attachment-image" title="${escapeHtml(att.original_filename)}">
                     <img src="api/download.php?id=${att.id}&inline=1" alt="${escapeHtml(att.original_filename)}" style="max-width: 200px; max-height: 200px; border-radius: 4px;">
-                </a>`;
+                </button>`;
             } else if (isVideo) {
-                return `<video controls style="max-width: 300px; max-height: 200px; border-radius: 4px;" title="${escapeHtml(att.original_filename)}">
-                    <source src="api/download.php?id=${att.id}&inline=1" type="${escapeHtml(att.mime_type)}">
-                    Видео не поддерживается
-                </video>`;
+                return `<button type="button" data-preview-url="api/download.php?id=${att.id}&inline=1" data-preview-type="video" data-preview-name="${escapeHtml(att.original_filename)}" class="attachment-video-button" title="${escapeHtml(att.original_filename)}">▶ ${escapeHtml(att.original_filename)}</button>`;
             } else {
                 return `<a href="api/download.php?id=${att.id}" class="attachment-file" download="${escapeHtml(att.original_filename)}" title="${escapeHtml(att.original_filename)}">
                     📎 ${escapeHtml(att.original_filename)} (${formatFileSize(att.file_size)})
@@ -182,104 +274,14 @@
         }).join('') + '</div>';
     }
 
-    function trashIcon() {
-        return `
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-                <path d="M9 3h6l1 2h4v2H4V5h4l1-2Z"></path>
-                <path d="M6.5 9h11l-.7 10.2A2 2 0 0 1 14.8 21H9.2a2 2 0 0 1-2-1.8L6.5 9Z"></path>
-                <path d="M10 11.5v6M14 11.5v6"></path>
-            </svg>
-        `;
-    }
-
-    function ensureDeleteConfirm() {
-        let modal = document.getElementById('visitorDeleteConfirmModal');
-        if (modal) {
-            return modal;
-        }
-
-        modal = document.createElement('div');
-        modal.id = 'visitorDeleteConfirmModal';
-        modal.className = 'visitor-confirm-modal';
-        modal.hidden = true;
-        modal.innerHTML = `
-            <div class="visitor-confirm-modal__backdrop" data-delete-cancel></div>
-            <section class="visitor-confirm-modal__panel" role="dialog" aria-modal="true" aria-labelledby="visitorDeleteConfirmTitle">
-                <div class="visitor-confirm-modal__icon">!</div>
-                <div class="visitor-confirm-modal__content">
-                    <h3 id="visitorDeleteConfirmTitle">Удалить сообщение?</h3>
-                    <p>Сообщение исчезнет у вас, но останется в истории поддержки серым.</p>
-                </div>
-                <div class="visitor-confirm-modal__actions">
-                    <button type="button" class="visitor-confirm-modal__cancel" data-delete-cancel>Отмена</button>
-                    <button type="button" class="visitor-confirm-modal__delete" id="visitorDeleteConfirmAction">Удалить</button>
-                </div>
-            </section>
-        `;
-        document.body.appendChild(modal);
-
-        modal.querySelectorAll('[data-delete-cancel]').forEach((button) => {
-            button.addEventListener('click', closeDeleteConfirm);
-        });
-        modal.querySelector('#visitorDeleteConfirmAction').addEventListener('click', async () => {
-            if (!pendingDeleteMessageId) {
-                closeDeleteConfirm();
-                return;
-            }
-
-            const action = modal.querySelector('#visitorDeleteConfirmAction');
-            action.disabled = true;
-            action.textContent = 'Удаляем...';
-            try {
-                const deleted = await deleteMessage(pendingDeleteMessageId, pendingDeleteButton);
-                if (deleted) {
-                    closeDeleteConfirm();
-                }
-            } finally {
-                action.disabled = false;
-                action.textContent = 'Удалить';
-            }
-        });
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && !modal.hidden) {
-                closeDeleteConfirm();
-            }
-        });
-
-        return modal;
-    }
-
-    function openDeleteConfirm(messageId, button) {
-        pendingDeleteMessageId = messageId;
-        pendingDeleteButton = button;
-        const modal = ensureDeleteConfirm();
-        modal.hidden = false;
-        document.body.classList.add('visitor-confirm-open');
-        setTimeout(() => modal.querySelector('.visitor-confirm-modal__cancel')?.focus(), 0);
-    }
-
-    function closeDeleteConfirm() {
-        const modal = document.getElementById('visitorDeleteConfirmModal');
-        if (modal) {
-            modal.hidden = true;
-        }
-        pendingDeleteMessageId = null;
-        pendingDeleteButton = null;
-        document.body.classList.remove('visitor-confirm-open');
-    }
-
-    function render(items) {
+    function render(items, keepScroll = false) {
+        const previousHeight = messages.scrollHeight;
+        const previousTop = messages.scrollTop;
         const signature = JSON.stringify(items.map((message) => [message.id, message.sender, message.body, message.delivery_error || '', (message.attachments || []).map(a => [a.id, a.original_filename, a.mime_type].join(':')).join(','), message.is_deleted_by_visitor, message.is_deleted_for_user]));
         if (signature === messageSignature) {
             return;
         }
         messageSignature = signature;
-
-        const supportCount = items.filter((message) => message.sender === 'support').length;
-        if (!panel.classList.contains('open') && supportCount > lastSupportCount) {
-            launcherCount.textContent = String(supportCount - lastSupportCount);
-        }
-        lastSupportCount = supportCount;
 
         if (items.length === 0) {
             messages.innerHTML = `
@@ -292,17 +294,12 @@
         }
 
         messages.innerHTML = items.map((message) => {
-            const isDeleted = Boolean(message.is_deleted_by_visitor || message.is_deleted_for_user);
-            const isSender = message.sender === 'visitor';
+            const isDeleted = Boolean(message.is_deleted_for_user);
             const senderClass = message.sender === 'support' ? 'support' : message.sender === 'system' ? 'system' : 'visitor';
             const author = message.sender === 'support' ? 'Поддержка' : message.sender === 'system' ? 'Система' : 'Вы';
-            const deleteButton = isSender && !isDeleted
-                ? `<button class="delete-message-btn" data-message-id="${message.id}" title="Удалить сообщение" aria-label="Удалить сообщение">${trashIcon()}</button>`
-                : '';
             return `
             <div class="message-row ${senderClass}${isDeleted ? ' message-deleted' : ''}">
                 <div class="message-line">
-                    ${deleteButton}
                     <article class="message ${senderClass}${message.delivery_error ? ' message-delivery-error' : ''}">
                         <div class="message-body">${isDeleted ? '<em>Сообщение удалено</em>' : messageBodyText(message)}</div>
                         ${!isDeleted && message.delivery_error ? `<div class="message-error-note">Ошибка доставки: ${escapeHtml(message.delivery_error)}</div>` : ``}
@@ -315,45 +312,7 @@
             </div>
         `;
         }).join('');
-        messages.scrollTop = messages.scrollHeight;
-
-        // Add delete event listeners
-        messages.querySelectorAll('.delete-message-btn').forEach(btn => {
-            btn.addEventListener('click', async (e) => {
-                e.preventDefault();
-                const messageId = parseInt(btn.dataset.messageId);
-                openDeleteConfirm(messageId, btn);
-            });
-        });
-    }
-
-    async function deleteMessage(messageId, btn) {
-        try {
-            btn.disabled = true;
-            btn.classList.add('is-loading');
-            
-            const res = await fetch('api/delete_message.php', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ message_id: messageId }),
-            });
-            const data = await res.json();
-            
-            if (!data.ok) {
-                showError(data.error || 'Ошибка удаления сообщения');
-                btn.disabled = false;
-                btn.classList.remove('is-loading');
-                return false;
-            }
-            
-            await loadMessages();
-            return true;
-        } catch (err) {
-            showError(err.message || 'Ошибка сети при удалении');
-            btn.disabled = false;
-            btn.classList.remove('is-loading');
-            return false;
-        }
+        messages.scrollTop = keepScroll ? messages.scrollHeight - previousHeight + previousTop : messages.scrollHeight;
     }
 
     function showError(message) {
@@ -380,15 +339,25 @@
         }
     }
 
-    function loadMessages() {
-        return fetch('api/messages.php')
+    function loadMessages(beforeId = 0) {
+        const url = beforeId > 0 ? 'api/messages.php?before_id=' + encodeURIComponent(beforeId) : 'api/messages.php';
+        return fetch(url)
             .then((response) => response.json())
             .then((data) => {
                 if (!data.ok) {
                     throw new Error(data.error || 'Ошибка загрузки');
                 }
                 applyConversationState(data.conversation);
-                render(data.messages || []);
+                const unread = Number(data.conversation?.unread_visitor || 0);
+                launcherCount.textContent = !panel.classList.contains('open') && unread > 0 ? String(unread) : '';
+                hasMoreBefore = Boolean(data.has_more_before);
+                if (beforeId > 0) {
+                    loadedMessages = (data.messages || []).concat(loadedMessages);
+                    render(loadedMessages, true);
+                } else {
+                    loadedMessages = data.messages || [];
+                    render(loadedMessages);
+                }
             })
             .catch(() => {
                 status.textContent = 'offline';
@@ -406,6 +375,7 @@
         try {
             const formData = new FormData();
             formData.append('body', body);
+            appendSupportUser(formData);
             for (const file of selectedFiles) {
                 formData.append('files[]', file);
             }
@@ -454,6 +424,18 @@
         selectedFiles = Array.from(e.target.files || []);
         updateFilePreview();
     });
+    messages.addEventListener('scroll', () => {
+        if (!hasMoreBefore || loadingOlder || messages.scrollTop > 60 || loadedMessages.length === 0) return;
+        loadingOlder = true;
+        loadMessages(Number(loadedMessages[0].id || 0)).finally(() => {
+            loadingOlder = false;
+        });
+    });
+    messages.addEventListener('click', (event) => {
+        const preview = event.target.closest('[data-preview-url]');
+        if (!preview) return;
+        openFileModal(preview.dataset.previewUrl, preview.dataset.previewName, preview.dataset.previewType);
+    });
 
     messageInput.addEventListener('input', autosize);
     messageInput.addEventListener('keydown', (event) => {
@@ -473,6 +455,7 @@
     });
 
     initTheme();
+    initEmojiPicker();
     setInterval(loadMessages, 2500);
     loadMessages();
     autosize();

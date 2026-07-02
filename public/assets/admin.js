@@ -24,23 +24,44 @@
     const clientHandle = document.getElementById('clientHandle');
     const detailChannel = document.getElementById('detailChannel');
     const detailStatus = document.getElementById('detailStatus');
+    const detailBalance = document.getElementById('detailBalance');
     const detailCreated = document.getElementById('detailCreated');
     const detailUpdated = document.getElementById('detailUpdated');
     const operatorNote = document.getElementById('operatorNote');
     const soundToggle = document.getElementById('soundToggle');
     const adminThemeToggle = document.getElementById('adminThemeToggle');
+    const balanceForm = document.getElementById('balanceForm');
+    const balanceInput = document.getElementById('balanceInput');
+    const balanceComment = document.getElementById('balanceComment');
+    const balanceSave = document.getElementById('balanceSave');
+    const balanceHistory = document.getElementById('balanceHistory');
+    const adminTools = document.getElementById('adminTools');
+    const staffForm = document.getElementById('staffForm');
+    const staffLogin = document.getElementById('staffLogin');
+    const staffPassword = document.getElementById('staffPassword');
+    const staffRole = document.getElementById('staffRole');
+    const staffList = document.getElementById('staffList');
+    const loadTelegramLogs = document.getElementById('loadTelegramLogs');
+    const telegramLogList = document.getElementById('telegramLogList');
 
     let isAuthorized = false;
+    let currentRole = '';
     let soundEnabled = localStorage.getItem('support_sound_enabled') === '1';
     let conversations = [];
     let selectedId = null;
     let selectedConversation = null;
     let messageSignature = '';
+    let loadedMessages = [];
+    let hasMoreMessagesBefore = false;
+    let loadingOlderMessages = false;
     let lastUnreadTotal = 0;
     let sending = false;
     let loadingConversations = false;
+    let conversationOffset = 0;
+    let hasMoreConversations = true;
     let selectedFiles = [];
     let pendingDeleteMessageId = null;
+    const emojiList = ['😀','🙂','👍','🙏','✅','🔥','❤️','😎','🤝','📎'];
 
     soundToggle.textContent = soundEnabled ? 'Звук: вкл' : 'Звук: выкл';
 
@@ -160,12 +181,83 @@
 
     function currentQuery() {
         const params = new URLSearchParams();
+        params.set('limit', '30');
+        params.set('offset', String(conversationOffset));
         const search = searchInput.value.trim();
         if (search) params.set('search', search);
         if (statusFilter.value) params.set('status', statusFilter.value);
         if (channelFilter.value) params.set('channel', channelFilter.value);
         const query = params.toString();
         return query ? '?' + query : '';
+    }
+
+    function insertAtCursor(input, text) {
+        const start = input.selectionStart || 0;
+        const end = input.selectionEnd || 0;
+        input.value = input.value.slice(0, start) + text + input.value.slice(end);
+        input.selectionStart = input.selectionEnd = start + text.length;
+        input.focus();
+        autosize();
+    }
+
+    function initEmojiPicker() {
+        if (composer.querySelector('.emoji-picker')) return;
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'icon-button emoji-button';
+        button.title = 'Вставить эмодзи';
+        button.setAttribute('aria-label', 'Вставить эмодзи');
+        button.textContent = '☺';
+        const picker = document.createElement('div');
+        picker.className = 'emoji-picker';
+        picker.hidden = true;
+        picker.innerHTML = emojiList.map((emoji) => `<button type="button" data-emoji="${emoji}">${emoji}</button>`).join('');
+        attachButton.parentElement.insertBefore(button, attachButton.nextSibling);
+        composer.appendChild(picker);
+        button.addEventListener('click', () => {
+            picker.hidden = !picker.hidden;
+        });
+        picker.addEventListener('click', (event) => {
+            const option = event.target.closest('[data-emoji]');
+            if (!option) return;
+            insertAtCursor(messageInput, option.dataset.emoji);
+            picker.hidden = true;
+        });
+    }
+
+    function ensureFileModal() {
+        let modal = document.getElementById('adminFileModal');
+        if (modal) return modal;
+        modal = document.createElement('div');
+        modal.id = 'adminFileModal';
+        modal.className = 'file-view-modal';
+        modal.hidden = true;
+        modal.innerHTML = `
+            <div class="file-view-modal__backdrop" data-file-close></div>
+            <section class="file-view-modal__panel" role="dialog" aria-modal="true">
+                <button type="button" class="file-view-modal__close" data-file-close aria-label="Закрыть">x</button>
+                <div class="file-view-modal__body"></div>
+                <a class="file-view-modal__download" href="#" download>Скачать</a>
+            </section>
+        `;
+        document.body.appendChild(modal);
+        modal.querySelectorAll('[data-file-close]').forEach((item) => item.addEventListener('click', () => {
+            modal.hidden = true;
+            modal.querySelector('.file-view-modal__body').innerHTML = '';
+        }));
+        return modal;
+    }
+
+    function openFileModal(url, name, type) {
+        const modal = ensureFileModal();
+        const body = modal.querySelector('.file-view-modal__body');
+        const download = modal.querySelector('.file-view-modal__download');
+        download.href = url.replace('&inline=1', '');
+        download.download = name || 'file';
+        body.innerHTML = type === 'video'
+            ? `<video controls autoplay src="${url}"></video>`
+            : `<img src="${url}" alt="${escapeHtml(name || 'file')}">`;
+        modal.hidden = false;
     }
 
     function playNotification() {
@@ -252,9 +344,9 @@
                         <img src="${inlineUrl}" alt="${displayText(att.original_filename)}" style="max-width: 200px; max-height: 200px; border-radius: 4px; opacity: .7; filter: grayscale(30%);">
                     </div>`;
                 }
-                return `<a href="${downloadUrl}" class="attachment-image" title="${displayText(att.original_filename)}" target="_blank">
+                return `<button type="button" data-preview-url="${inlineUrl}" data-preview-type="image" data-preview-name="${displayText(att.original_filename)}" class="attachment-image" title="${displayText(att.original_filename)}">
                     <img src="${inlineUrl}" alt="${displayText(att.original_filename)}" style="max-width: 200px; max-height: 200px; border-radius: 4px;">
-                </a>`;
+                </button>`;
             } else if (isVideo) {
                 if (disableLinks) {
                     return `<div class="attachment-video-disabled" title="${displayText(att.original_filename)}">
@@ -263,10 +355,7 @@
                         </video>
                     </div>`;
                 }
-                return `<video controls style="max-width: 300px; max-height: 200px; border-radius: 4px;" title="${displayText(att.original_filename)}">
-                    <source src="${inlineUrl}" type="${att.mime_type}">
-                    Видео не поддерживается
-                </video>`;
+                return `<button type="button" data-preview-url="${inlineUrl}" data-preview-type="video" data-preview-name="${displayText(att.original_filename)}" class="attachment-video-button" title="${displayText(att.original_filename)}">▶ ${displayText(att.original_filename)}</button>`;
             } else {
                 if (disableLinks) {
                     return `<div class="attachment-file-disabled" title="${displayText(att.original_filename)}">📎 ${displayText(att.original_filename)} (${formatFileSize(att.file_size)})</div>`;
@@ -425,10 +514,15 @@
             clientHandle.textContent = 'Выберите диалог слева';
             detailChannel.textContent = '-';
             detailStatus.textContent = '-';
+            detailBalance.textContent = '0.00';
             detailCreated.textContent = '-';
             detailUpdated.textContent = '-';
             operatorNote.value = '';
             operatorNote.disabled = true;
+            balanceInput.disabled = true;
+            balanceComment.disabled = true;
+            balanceSave.disabled = true;
+            balanceHistory.innerHTML = '';
             return;
         }
 
@@ -450,10 +544,67 @@
         clientHandle.textContent = dialogLabel(item);
         detailChannel.textContent = channelText(item.channel);
         detailStatus.textContent = statusText(item.status);
+        detailBalance.textContent = Number(item.balance || 0).toFixed(2);
+        balanceInput.value = Number(item.balance || 0).toFixed(2);
+        balanceInput.disabled = false;
+        balanceComment.disabled = false;
+        balanceSave.disabled = false;
         detailCreated.textContent = formatDate(item.created_at);
         detailUpdated.textContent = formatDate(item.updated_at);
         operatorNote.disabled = false;
         operatorNote.value = localStorage.getItem('support_note_' + item.id) || '';
+        loadBalance();
+    }
+
+    function renderBalanceHistory(items) {
+        balanceHistory.innerHTML = (items || []).map((item) => `
+            <div class="admin-mini-item">
+                <strong>${Number(item.old_balance).toFixed(2)} → ${Number(item.new_balance).toFixed(2)}</strong>
+                <span>${displayText(item.staff_login || 'admin')} · ${escapeHtml(formatDate(item.created_at))}</span>
+                ${item.comment ? `<small>${displayText(item.comment)}</small>` : ''}
+            </div>
+        `).join('');
+    }
+
+    async function loadBalance() {
+        if (!selectedId) return;
+        try {
+            const data = await api('api/balance.php?conversation_id=' + encodeURIComponent(selectedId));
+            detailBalance.textContent = Number(data.balance || 0).toFixed(2);
+            balanceInput.value = Number(data.balance || 0).toFixed(2);
+            renderBalanceHistory(data.history || []);
+        } catch (error) {
+            balanceHistory.innerHTML = '<div class="empty-inline">' + escapeHtml(error.message) + '</div>';
+        }
+    }
+
+    function renderStaff(items) {
+        staffList.innerHTML = (items || []).map((item) => `
+            <div class="admin-mini-item">
+                <strong>${displayText(item.login)} · ${escapeHtml(item.role)}</strong>
+                <span>${item.is_blocked ? 'заблокирован' : 'активен'}</span>
+                <button type="button" data-staff-action="password" data-staff-id="${item.id}">Пароль</button>
+                <button type="button" data-staff-action="${item.is_blocked ? 'unblock' : 'block'}" data-staff-id="${item.id}">${item.is_blocked ? 'Разблокировать' : 'Блокировать'}</button>
+            </div>
+        `).join('');
+    }
+
+    async function loadStaff() {
+        if (currentRole !== 'admin') return;
+        const data = await api('api/staff.php');
+        renderStaff(data.staff || []);
+    }
+
+    async function loadLogs() {
+        if (currentRole !== 'admin') return;
+        const data = await api('api/telegram_logs.php?limit=80');
+        telegramLogList.innerHTML = (data.logs || []).map((item) => `
+            <div class="admin-mini-item">
+                <strong>${escapeHtml(item.direction)} · ${escapeHtml(item.action)} · ${item.success ? 'ok' : 'error'}</strong>
+                <span>${escapeHtml(formatDate(item.created_at))} · chat ${escapeHtml(item.telegram_chat_id || '-')}</span>
+                ${item.error ? `<small>${displayText(item.error)}</small>` : ''}
+            </div>
+        `).join('');
     }
 
     async function deleteMessageForUser(messageId) {
@@ -474,7 +625,9 @@
         }
     }
 
-    function renderMessages(items) {
+    function renderMessages(items, keepScroll = false) {
+        const previousHeight = messages.scrollHeight;
+        const previousTop = messages.scrollTop;
         const signature = JSON.stringify(items.map((message) => [message.id, message.sender, message.body, message.delivery_error || '', (message.attachments || []).map(a => [a.id, a.original_filename, a.mime_type].join(':')).join(','), message.is_deleted_by_visitor, message.is_deleted_for_user]));
         if (signature === messageSignature) {
             return;
@@ -493,9 +646,8 @@
             lastDay = day || lastDay;
             const author = message.sender === 'support' ? 'Оператор' : message.sender === 'system' ? 'Система' : 'Клиент';
             const isDeletedForUser = Boolean(message.is_deleted_for_user);
-            const isDeletedByVisitor = Boolean(message.is_deleted_by_visitor);
-            const isDeleted = isDeletedForUser || isDeletedByVisitor;
-            const deleteLabel = isDeletedForUser ? 'Удалено для пользователя' : isDeletedByVisitor ? 'Удалено клиентом' : '';
+            const isDeleted = isDeletedForUser;
+            const deleteLabel = isDeletedForUser ? 'Удалено оператором' : '';
             return `
                 ${divider}
                 <article class="message ${message.sender}${isDeleted ? ' message-deleted' : ''}${message.delivery_error ? ' message-delivery-error' : ''}">
@@ -512,7 +664,7 @@
                 </article>
             `;
         }).join('');
-        messages.scrollTop = messages.scrollHeight;
+        messages.scrollTop = keepScroll ? messages.scrollHeight - previousHeight + previousTop : messages.scrollHeight;
 
         messages.querySelectorAll('.delete-message-btn').forEach((button) => {
             button.addEventListener('click', async (event) => {
@@ -528,22 +680,31 @@
     function selectConversation(id) {
         selectedId = id;
         messageSignature = '';
+        loadedMessages = [];
+        hasMoreMessagesBefore = false;
         const item = conversations.find((conversation) => Number(conversation.id) === Number(id));
         setChatState(item);
         renderConversations();
         loadMessages();
     }
 
-    function loadConversations() {
+    function loadConversations(appendPage = false) {
         if (!isAuthorized || loadingConversations) {
             renderConversations();
             return Promise.resolve();
         }
 
+        if (!appendPage) {
+            conversationOffset = 0;
+            hasMoreConversations = true;
+        }
         loadingConversations = true;
+        const append = appendPage && conversationOffset > 0;
         return api('api/conversations.php' + currentQuery())
             .then((data) => {
-                conversations = data.conversations || [];
+                conversations = append ? conversations.concat(data.conversations || []) : (data.conversations || []);
+                hasMoreConversations = Boolean(data.has_more);
+                conversationOffset = Number(data.next_offset || conversations.length);
                 const unreadTotal = conversations.reduce((sum, item) => sum + Number(item.unread_support || 0), 0);
                 if (lastUnreadTotal && unreadTotal > lastUnreadTotal) {
                     playNotification();
@@ -583,12 +744,16 @@
             });
     }
 
-    function loadMessages() {
+    function loadMessages(beforeId = 0) {
         if (!selectedId || !isAuthorized) {
             return Promise.resolve();
         }
 
-        return api('api/messages.php?admin=1&conversation_id=' + encodeURIComponent(selectedId))
+        let url = 'api/messages.php?admin=1&conversation_id=' + encodeURIComponent(selectedId);
+        if (beforeId > 0) {
+            url += '&before_id=' + encodeURIComponent(beforeId);
+        }
+        return api(url)
             .then((data) => {
                 conversations = conversations.map((item) => {
                     if (Number(item.id) === Number(selectedId)) {
@@ -603,7 +768,14 @@
                     selectedConversation = data.conversation;
                     setChatState(data.conversation);
                 }
-                renderMessages(data.messages || []);
+                hasMoreMessagesBefore = Boolean(data.has_more_before);
+                if (beforeId > 0) {
+                    loadedMessages = (data.messages || []).concat(loadedMessages);
+                    renderMessages(loadedMessages, true);
+                } else {
+                    loadedMessages = data.messages || [];
+                    renderMessages(loadedMessages);
+                }
             })
             .catch((error) => {
                 messages.innerHTML = '<div class="empty">' + escapeHtml(error.message) + '</div>';
@@ -663,17 +835,21 @@
         const login = adminLogin ? adminLogin.value.trim() : '';
         const password = adminPassword ? adminPassword.value : '';
         try {
-            await api('api/admin_login.php', {
+            const loginData = await api('api/admin_login.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ login, password }),
             });
+            currentRole = loginData.role || '';
+            if (adminTools) adminTools.hidden = currentRole !== 'admin';
             if (adminPassword) adminPassword.value = '';
             setAuthorizedState(true);
+            initEmojiPicker();
             selectedId = null;
             selectedConversation = null;
             messageSignature = '';
             await loadConversations();
+            await loadStaff();
         } catch (error) {
             setAuthorizedState(false);
             showAuthError(error.message || 'Не удалось войти');
@@ -684,6 +860,8 @@
         selectedId = null;
         selectedConversation = null;
         messageSignature = '';
+        conversationOffset = 0;
+        hasMoreConversations = true;
         messages.innerHTML = '<div class="empty">Выберите диалог</div>';
         loadConversations();
     }
@@ -699,6 +877,12 @@
         const button = event.target.closest('.conversation');
         if (button) {
             selectConversation(Number(button.dataset.id));
+        }
+    });
+    conversationList.addEventListener('scroll', () => {
+        if (!hasMoreConversations || loadingConversations) return;
+        if (conversationList.scrollTop + conversationList.clientHeight >= conversationList.scrollHeight - 80) {
+            loadConversations(true);
         }
     });
 
@@ -717,6 +901,71 @@
         soundToggle.textContent = soundEnabled ? 'Звук: вкл' : 'Звук: выкл';
         if (soundEnabled) playNotification();
     });
+
+    balanceForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!selectedId) return;
+        try {
+            await api('api/balance.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    conversation_id: selectedId,
+                    balance: balanceInput.value,
+                    comment: balanceComment.value.trim(),
+                }),
+            });
+            balanceComment.value = '';
+            await loadBalance();
+            await loadConversations();
+        } catch (error) {
+            showError(error.message || 'Не удалось изменить баланс');
+        }
+    });
+
+    staffForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        try {
+            await api('api/staff.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'create',
+                    login: staffLogin.value.trim(),
+                    password: staffPassword.value,
+                    role: staffRole.value,
+                }),
+            });
+            staffLogin.value = '';
+            staffPassword.value = '';
+            await loadStaff();
+        } catch (error) {
+            showError(error.message || 'Не удалось добавить менеджера');
+        }
+    });
+
+    staffList.addEventListener('click', async (event) => {
+        const button = event.target.closest('[data-staff-action]');
+        if (!button) return;
+        try {
+            let payload = { action: button.dataset.staffAction, id: Number(button.dataset.staffId) };
+            if (button.dataset.staffAction === 'password') {
+                const password = window.prompt('Новый пароль менеджера');
+                if (!password) return;
+                payload.password = password;
+            }
+            await api('api/staff.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            await loadStaff();
+        } catch (error) {
+            showError(error.message || 'Не удалось изменить менеджера');
+        }
+    });
+
+    loadTelegramLogs.addEventListener('click', loadLogs);
 
     if (adminThemeToggle) {
         adminThemeToggle.addEventListener('click', () => {
@@ -739,6 +988,18 @@
     fileInput.addEventListener('change', (e) => {
         selectedFiles = Array.from(e.target.files || []);
         updateFilePreview();
+    });
+    messages.addEventListener('click', (event) => {
+        const preview = event.target.closest('[data-preview-url]');
+        if (!preview) return;
+        openFileModal(preview.dataset.previewUrl, preview.dataset.previewName, preview.dataset.previewType);
+    });
+    messages.addEventListener('scroll', () => {
+        if (!hasMoreMessagesBefore || loadingOlderMessages || messages.scrollTop > 60 || loadedMessages.length === 0) return;
+        loadingOlderMessages = true;
+        loadMessages(Number(loadedMessages[0].id || 0)).finally(() => {
+            loadingOlderMessages = false;
+        });
     });
 
     messageInput.addEventListener('input', autosize);
@@ -792,9 +1053,13 @@
     setInterval(loadMessages, 2500);
     api('api/admin_login.php')
         .then((data) => {
+            currentRole = data.role || '';
+            if (adminTools) adminTools.hidden = currentRole !== 'admin';
             setAuthorizedState(Boolean(data.authenticated));
             if (isAuthorized) {
+                initEmojiPicker();
                 loadConversations();
+                loadStaff();
             } else {
                 renderConversations();
             }

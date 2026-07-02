@@ -29,7 +29,7 @@ if (!support_chat_is_admin_authenticated()) {
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="assets/admin.css?v=20260627-media-errors">
+    <link rel="stylesheet" href="assets/admin.css?v=20260702-paperclip">
 </head>
 <body>
     <main class="shell">
@@ -84,10 +84,14 @@ if (!support_chat_is_admin_authenticated()) {
                 <button type="button" data-reply="Спасибо за обращение! Если появятся вопросы, напишите нам снова.">Закрывающий ответ</button>
             </div>
             <form class="composer" id="composer">
+                <input type="file" id="fileInput" multiple accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.mp4,.webm,.mov,.mkv,.avi,.zip,.rar,.7z,.tar,.gz,.tgz" style="display:none">
+                <button type="button" id="attachButton" class="icon-button attach-button" title="Добавить файл" aria-label="Добавить файл" disabled>
+                    <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+                        <path d="M7.2 13.1 13.8 6.5a3.3 3.3 0 0 1 4.7 4.7l-8.2 8.2a5.1 5.1 0 0 1-7.2-7.2l8.5-8.5"></path>
+                    </svg>
+                </button>
                 <textarea id="messageInput" rows="2" placeholder="Ответить клиенту" disabled></textarea>
                 <div class="composer-actions">
-                    <input type="file" id="fileInput" multiple accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.mp4,.webm,.mov,.mkv,.avi,.zip,.rar,.7z,.tar,.gz,.tgz" style="display:none">
-                    <button type="button" id="attachButton" class="icon-button" title="Прикрепить файл" disabled>+</button>
                     <button type="submit" id="sendButton" disabled class="submit-button">Отправить</button>
                 </div>
                 <div class="file-preview" id="filePreview" style="display:none;"></div>
@@ -103,8 +107,18 @@ if (!support_chat_is_admin_authenticated()) {
             <div class="details-card compact">
                 <span>Источник</span><strong id="detailChannel">-</strong>
                 <span>Статус</span><strong id="detailStatus">-</strong>
+                <span>Баланс</span><strong id="detailBalance">0.00</strong>
                 <span>Создан</span><strong id="detailCreated">-</strong>
                 <span>Обновлен</span><strong id="detailUpdated">-</strong>
+            </div>
+            <div class="details-card">
+                <h3>Баланс пользователя</h3>
+                <form class="balance-form" id="balanceForm">
+                    <input id="balanceInput" type="number" step="0.01" placeholder="Новый баланс" disabled>
+                    <input id="balanceComment" type="text" placeholder="Комментарий" disabled>
+                    <button type="submit" class="secondary-button" disabled id="balanceSave">Сохранить</button>
+                </form>
+                <div class="admin-mini-list" id="balanceHistory"></div>
             </div>
             <div class="details-card">
                 <h3>Действия</h3>
@@ -119,8 +133,23 @@ if (!support_chat_is_admin_authenticated()) {
                 <h3>Заметка</h3>
                 <textarea class="note" id="operatorNote" placeholder="Личная заметка оператора"></textarea>
             </div>
+            <div class="details-card admin-only" id="adminTools" hidden>
+                <h3>Администрирование</h3>
+                <form class="staff-form" id="staffForm">
+                    <input id="staffLogin" type="text" placeholder="Логин менеджера">
+                    <input id="staffPassword" type="password" placeholder="Пароль">
+                    <select id="staffRole">
+                        <option value="manager">manager</option>
+                        <option value="admin">admin</option>
+                    </select>
+                    <button type="submit" class="secondary-button">Добавить</button>
+                </form>
+                <div class="admin-mini-list" id="staffList"></div>
+                <button type="button" class="secondary-button" id="loadTelegramLogs">Показать Telegram-лог</button>
+                <div class="admin-mini-list telegram-log-list" id="telegramLogList"></div>
+            </div>
         </aside>
     </main>
-    <script src="assets/admin.js?v=20260627-media-errors"></script>
+    <script src="assets/admin.js?v=20260702-support-audit"></script>
 </body>
 </html>

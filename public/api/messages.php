@@ -5,6 +5,10 @@ require_once __DIR__ . '/../../src/http.php';
 require_once __DIR__ . '/../../src/database.php';
 require_once __DIR__ . '/../../src/telegram.php';
 
+if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
+    support_chat_json(['ok' => true]);
+}
+
 $pdo = support_chat_db();
 $method = $_SERVER['REQUEST_METHOD'] ?? 'GET';
 $isAdmin = isset($_GET['admin']) && $_GET['admin'] === '1';
@@ -121,6 +125,19 @@ function support_chat_log_telegram_result(int $conversationId, array $response, 
     ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND | LOCK_EX);
 }
 
+function support_chat_log_outgoing_telegram(PDO $pdo, int $conversationId, array $conversation, string $action, array $payload, array $response): void
+{
+    support_chat_log_telegram($pdo, 'outgoing', $action, [
+        'chat_id' => (string)($conversation['external_id'] ?? ''),
+        'message_id' => (string)($response['result']['message_id'] ?? ''),
+        'conversation_id' => $conversationId,
+        'payload' => $payload,
+        'result' => $response,
+        'success' => !empty($response['ok']),
+        'error' => empty($response['ok']) ? (string)($response['description'] ?? 'Telegram request failed') : '',
+    ]);
+}
+
 function support_chat_update_message_telegram_id(PDO $pdo, int $messageId, string $telegramMessageId): void
 {
     if ($telegramMessageId === '') {
@@ -151,7 +168,9 @@ function support_chat_send_admin_message_to_telegram(PDO $pdo, int $messageId, i
     $chatId = (string)$conversation['external_id'];
     if (count($attachments) === 0) {
         if ($body !== '') {
+            $payload = ['text' => $body];
             $response = support_chat_telegram_send($chatId, $body);
+            support_chat_log_outgoing_telegram($pdo, $conversationId, $conversation, 'sendMessage', $payload, $response);
             support_chat_log_telegram_result($conversationId, $response, 'sendMessage');
             if (empty($response['ok'])) {
                 $errors[] = $response['description'] ?? 'Telegram не принял сообщение';
@@ -165,6 +184,11 @@ function support_chat_send_admin_message_to_telegram(PDO $pdo, int $messageId, i
     foreach ($attachments as $index => $attachment) {
         $path = support_chat_get_attachment_path((string)$attachment['filename']);
         $caption = $index === 0 ? $body : '';
+        $payload = [
+            'filename' => (string)$attachment['original_filename'],
+            'mime_type' => (string)$attachment['mime_type'],
+            'caption' => $caption,
+        ];
         $response = support_chat_telegram_send_attachment(
             $chatId,
             $path,
@@ -172,6 +196,7 @@ function support_chat_send_admin_message_to_telegram(PDO $pdo, int $messageId, i
             (string)$attachment['mime_type'],
             $caption
         );
+        support_chat_log_outgoing_telegram($pdo, $conversationId, $conversation, 'sendAttachment', $payload, $response);
         support_chat_log_telegram_result($conversationId, $response, 'sendAttachment');
         if (empty($response['ok'])) {
             $errors[] = ((string)$attachment['original_filename']) . ': ' . ($response['description'] ?? 'Telegram не принял файл');
@@ -190,7 +215,7 @@ function support_chat_send_admin_message_to_telegram(PDO $pdo, int $messageId, i
 function support_chat_delete_admin_message_from_telegram(PDO $pdo, int $messageId): array
 {
     $stmt = $pdo->prepare('
-        SELECT m.id, m.sender, m.telegram_message_id, c.channel, c.external_id
+        SELECT m.id, m.sender, m.conversation_id, m.telegram_message_id, c.channel, c.external_id
         FROM messages m
         JOIN conversations c ON c.id = m.conversation_id
         WHERE m.id = ?
@@ -226,6 +251,15 @@ function support_chat_delete_admin_message_from_telegram(PDO $pdo, int $messageI
     $errors = [];
     foreach ($ids as $id) {
         $response = support_chat_telegram_delete_message($chatId, $id);
+        support_chat_log_telegram($pdo, 'outgoing', 'deleteMessage', [
+            'chat_id' => $chatId,
+            'message_id' => $id,
+            'conversation_id' => (int)($message['conversation_id'] ?? 0),
+            'payload' => ['message_id' => $id],
+            'result' => $response,
+            'success' => !empty($response['ok']),
+            'error' => empty($response['ok']) ? (string)($response['description'] ?? 'Telegram request failed') : '',
+        ]);
         support_chat_log_telegram_result((int)$message['id'], $response, 'deleteMessage');
         if (empty($response['ok'])) {
             $description = (string)($response['description'] ?? 'Telegram не удалил сообщение');
@@ -257,16 +291,33 @@ if ($method === 'GET') {
         ]);
     }
 
-    $stmt = $pdo->prepare('SELECT * FROM messages WHERE conversation_id = ? ORDER BY id ASC LIMIT 500');
-    $stmt->execute([$conversationId]);
-    $messages = $stmt->fetchAll();
+    $limit = max(1, min(80, (int)($_GET['limit'] ?? 30)));
+    $beforeId = (int)($_GET['before_id'] ?? 0);
+    $afterId = (int)($_GET['after_id'] ?? 0);
+    $params = [$conversationId];
+    $where = 'conversation_id = ?';
+    if ($beforeId > 0) {
+        $where .= ' AND id < ?';
+        $params[] = $beforeId;
+    } elseif ($afterId > 0) {
+        $where .= ' AND id > ?';
+        $params[] = $afterId;
+    }
+    $params[] = $limit + 1;
+    $stmt = $pdo->prepare("SELECT * FROM messages WHERE {$where} ORDER BY id DESC LIMIT ?");
+    $stmt->execute($params);
+    $messages = array_reverse($stmt->fetchAll());
+    $hasMoreBefore = count($messages) > $limit;
+    if ($hasMoreBefore) {
+        array_shift($messages);
+    }
 
     foreach ($messages as &$message) {
         $message['attachments'] = support_chat_get_attachments($pdo, (int)$message['id']);
-        $message['is_deleted_by_visitor'] = (bool)($message['is_deleted_by_visitor'] ?? 0);
+        $message['is_deleted_by_visitor'] = false;
         $message['is_deleted_for_user'] = (bool)($message['is_deleted_for_user'] ?? 0);
 
-        if (!$isAdmin && ($message['is_deleted_by_visitor'] || $message['is_deleted_for_user'])) {
+        if (!$isAdmin && $message['is_deleted_for_user']) {
             $message = null;
         }
     }
@@ -296,6 +347,8 @@ if ($method === 'GET') {
         'conversation_id' => $conversationId,
         'conversation' => $conversation,
         'messages' => $messages,
+        'has_more_before' => $hasMoreBefore,
+        'limit' => $limit,
     ]);
 }
 
@@ -359,6 +412,7 @@ if ($method === 'POST') {
         } else {
             support_chat_rate_limit('web_message');
             $conversationId = support_chat_find_or_create_web_conversation($pdo, session_id());
+            support_chat_update_web_conversation_profile($pdo, $conversationId, $data);
             $messageId = support_chat_add_message($pdo, $conversationId, 'visitor', $body !== '' ? $body : '[файл]');
         }
 

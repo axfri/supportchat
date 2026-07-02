@@ -284,8 +284,9 @@
 }
 
 .fscw-composer {
+    position: relative;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto auto;
+    grid-template-columns: auto auto minmax(0, 1fr) auto;
     gap: 10px;
     padding: 14px;
     border-top: 1px solid var(--fscw-line);
@@ -315,7 +316,8 @@
 }
 
 .fscw-send,
-.fscw-attach {
+.fscw-attach,
+.fscw-emoji {
     min-height: 54px;
     border: 0;
     border-radius: 16px;
@@ -330,19 +332,86 @@
 .fscw-attach {
     width: 54px;
     padding: 0;
-    font-size: 19px;
+    border: 0;
+    background: transparent;
+    color: var(--fscw-text);
+    box-shadow: none;
+    font-size: 0;
+    line-height: 1;
+    font-weight: 800;
+}
+
+.fscw-attach svg {
+    width: 25px;
+    height: 25px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.9;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+}
+
+.fscw-emoji {
+    width: 54px;
+    padding: 0;
+    background: var(--fscw-card);
+    color: var(--fscw-text);
+    border: 1px solid var(--fscw-line);
+    box-shadow: none;
+    font-size: 20px;
 }
 
 .fscw-send:hover,
-.fscw-attach:hover {
+.fscw-attach:hover,
+.fscw-emoji:hover {
     background: #0f6fff;
+    color: #fff;
+}
+
+.fscw-attach:hover {
+    background: transparent;
+    color: #0877ff;
 }
 
 .fscw-send:disabled,
 .fscw-attach:disabled,
+.fscw-emoji:disabled,
 .fscw-input:disabled {
     opacity: .6;
     cursor: not-allowed;
+}
+
+.fscw-emoji-picker {
+    position: absolute;
+    left: 74px;
+    bottom: calc(100% - 6px);
+    z-index: 4;
+    display: grid;
+    grid-template-columns: repeat(5, 36px);
+    gap: 6px;
+    border: 1px solid var(--fscw-line);
+    border-radius: 16px;
+    background: var(--fscw-panel);
+    padding: 8px;
+    box-shadow: var(--fscw-shadow);
+}
+
+.fscw-emoji-picker[hidden] {
+    display: none;
+}
+
+.fscw-emoji-picker button {
+    width: 36px;
+    height: 36px;
+    border: 0;
+    border-radius: 10px;
+    background: transparent;
+    cursor: pointer;
+    font-size: 19px;
+}
+
+.fscw-emoji-picker button:hover {
+    background: var(--fscw-panel-soft);
 }
 
 .fscw-file-preview {
@@ -384,14 +453,103 @@
     margin-top: 10px;
 }
 
+.fscw-attachment-image,
+.fscw-attachment-video-button {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: var(--fscw-text);
+    cursor: pointer;
+    text-align: left;
+}
+
 .fscw-attachment-image img,
-.fscw-attachment-video {
+.fscw-attachment-video,
+.fscw-attachment-video-button {
     max-width: 210px;
     max-height: 210px;
     display: block;
     border: 1px solid var(--fscw-line);
     border-radius: 14px;
     object-fit: cover;
+}
+
+.fscw-attachment-video-button {
+    border: 1px solid var(--fscw-line);
+    border-radius: 999px;
+    background: var(--fscw-card);
+    padding: 8px 10px;
+    font-weight: 850;
+}
+
+.fscw-file-modal[hidden] {
+    display: none;
+}
+
+.fscw-file-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 2147483002;
+    display: grid;
+    place-items: center;
+    padding: 18px;
+}
+
+.fscw-file-modal__backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(3, 7, 18, .72);
+    backdrop-filter: blur(10px);
+}
+
+.fscw-file-modal__panel {
+    position: relative;
+    z-index: 1;
+    width: min(920px, 100%);
+    max-height: 86vh;
+    display: grid;
+    gap: 12px;
+    border: 1px solid var(--fscw-line);
+    border-radius: 22px;
+    background: var(--fscw-panel);
+    color: var(--fscw-text);
+    padding: 16px;
+    box-shadow: var(--fscw-shadow);
+}
+
+.fscw-file-modal__close {
+    justify-self: end;
+    width: 38px;
+    height: 38px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--fscw-card);
+    color: var(--fscw-text);
+    cursor: pointer;
+}
+
+.fscw-file-modal__body {
+    min-height: 0;
+    display: grid;
+    place-items: center;
+    overflow: auto;
+}
+
+.fscw-file-modal__body img,
+.fscw-file-modal__body video {
+    max-width: 100%;
+    max-height: 68vh;
+    border-radius: 16px;
+}
+
+.fscw-file-modal__download {
+    justify-self: end;
+    border-radius: 999px;
+    background: #0877ff;
+    color: #fff;
+    padding: 10px 16px;
+    font-weight: 900;
+    text-decoration: none;
 }
 
 @media (max-width: 700px) {
@@ -417,7 +575,7 @@
     }
 
     .fscw-composer {
-        grid-template-columns: 1fr auto auto;
+        grid-template-columns: auto auto 1fr auto;
     }
 
     .fscw-send {
