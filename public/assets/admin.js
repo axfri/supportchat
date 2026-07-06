@@ -25,6 +25,7 @@
     const detailChannel = document.getElementById('detailChannel');
     const detailStatus = document.getElementById('detailStatus');
     const detailBalance = document.getElementById('detailBalance');
+    const detailLanguage = document.getElementById('detailLanguage');
     const detailCreated = document.getElementById('detailCreated');
     const detailUpdated = document.getElementById('detailUpdated');
     const operatorNote = document.getElementById('operatorNote');
@@ -177,6 +178,25 @@
     function initials(item) {
         const name = (item && item.visitor_name) || '?';
         return name.trim().slice(0, 1).toUpperCase();
+    }
+
+    function avatarMarkup(item, className = 'avatar') {
+        const url = item && item.visitor_avatar_url ? String(item.visitor_avatar_url) : '';
+        if (url) {
+            return `<span class="${className} has-image"><img src="${escapeHtml(url)}" alt=""></span>`;
+        }
+        return `<span class="${className}">${escapeHtml(initials(item))}</span>`;
+    }
+
+    function applyAvatar(element, item) {
+        if (!element) return;
+        const url = item && item.visitor_avatar_url ? String(item.visitor_avatar_url) : '';
+        element.classList.toggle('has-image', Boolean(url));
+        element.innerHTML = url ? `<img src="${escapeHtml(url)}" alt="">` : escapeHtml(initials(item));
+    }
+
+    function languageLabel(item) {
+        return repairText((item && (item.language_label || item.visitor_language || item.browser_language)) || '');
     }
 
     function currentQuery() {
@@ -475,9 +495,10 @@
             const last = repairText(item.last_message || 'Нет сообщений');
             const preview = last.length > 94 ? last.slice(0, 91) + '...' : last;
             const time = formatDate(item.last_message_at || item.updated_at);
+            const language = languageLabel(item);
             return `
                 <button class="conversation${active}" data-id="${item.id}" type="button">
-                    <span class="avatar">${escapeHtml(initials(item))}</span>
+                    ${avatarMarkup(item)}
                     <span class="conversation-main">
                         <span class="conversation-top">
                             <strong>${displayText(name)}</strong>
@@ -487,6 +508,7 @@
                         <span class="conversation-meta">
                             <span class="badge ${item.channel}">${channelText(item.channel)}</span>
                             <span class="badge status-${item.status || 'open'}">${statusText(item.status)}</span>
+                            ${language ? `<span class="badge lang">${displayText(language)}</span>` : ''}
                             ${unread > 0 ? `<span class="badge unread">${unread}</span>` : ''}
                         </span>
                     </span>
@@ -509,12 +531,14 @@
             messageInput.disabled = true;
             sendButton.disabled = true;
             attachButton.disabled = true;
+            clientAvatar.classList.remove('has-image');
             clientAvatar.textContent = '?';
             clientName.textContent = 'Клиент не выбран';
             clientHandle.textContent = 'Выберите диалог слева';
             detailChannel.textContent = '-';
             detailStatus.textContent = '-';
             detailBalance.textContent = '0.00';
+            if (detailLanguage) detailLanguage.textContent = '-';
             detailCreated.textContent = '-';
             detailUpdated.textContent = '-';
             operatorNote.value = '';
@@ -539,12 +563,13 @@
         sendButton.textContent = sending ? 'Отправка' : 'Отправить';
         messageInput.placeholder = item.status === 'closed' ? 'Диалог закрыт' : 'Ответить клиенту';
 
-        clientAvatar.textContent = initials(item);
+        applyAvatar(clientAvatar, item);
         clientName.textContent = title;
-        clientHandle.textContent = dialogLabel(item);
+        clientHandle.textContent = [dialogLabel(item), languageLabel(item) ? 'Язык: ' + languageLabel(item) : ''].filter(Boolean).join(' · ');
         detailChannel.textContent = channelText(item.channel);
         detailStatus.textContent = statusText(item.status);
         detailBalance.textContent = Number(item.balance || 0).toFixed(2);
+        if (detailLanguage) detailLanguage.textContent = languageLabel(item) || '-';
         balanceInput.value = Number(item.balance || 0).toFixed(2);
         balanceInput.disabled = false;
         balanceComment.disabled = false;

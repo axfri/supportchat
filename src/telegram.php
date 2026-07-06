@@ -129,6 +129,14 @@ function support_chat_telegram_get_file(string $fileId): array
     ]);
 }
 
+function support_chat_telegram_get_user_profile_photos(string $userId, int $limit = 1): array
+{
+    return support_chat_telegram_request('getUserProfilePhotos', [
+        'user_id' => $userId,
+        'limit' => (string)max(1, min(10, $limit)),
+    ]);
+}
+
 function support_chat_telegram_download_file(string $fileId, string $targetPath): array
 {
     $token = support_chat_env('TELEGRAM_BOT_TOKEN');

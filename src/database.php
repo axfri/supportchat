@@ -36,6 +36,9 @@ function support_chat_migrate(PDO $pdo): void
             visitor_handle TEXT NOT NULL DEFAULT '',
             visitor_user_id TEXT NOT NULL DEFAULT '',
             visitor_email TEXT NOT NULL DEFAULT '',
+            visitor_avatar TEXT NOT NULL DEFAULT '',
+            visitor_language TEXT NOT NULL DEFAULT '',
+            browser_language TEXT NOT NULL DEFAULT '',
             balance REAL NOT NULL DEFAULT 0,
             status TEXT NOT NULL DEFAULT 'open',
             unread_support INTEGER NOT NULL DEFAULT 0,
@@ -70,6 +73,9 @@ function support_chat_migrate(PDO $pdo): void
     foreach ([
         'visitor_user_id' => "TEXT NOT NULL DEFAULT ''",
         'visitor_email' => "TEXT NOT NULL DEFAULT ''",
+        'visitor_avatar' => "TEXT NOT NULL DEFAULT ''",
+        'visitor_language' => "TEXT NOT NULL DEFAULT ''",
+        'browser_language' => "TEXT NOT NULL DEFAULT ''",
         'balance' => "REAL NOT NULL DEFAULT 0",
     ] as $name => $definition) {
         if (!in_array($name, $conversationColumnNames, true)) {
@@ -203,6 +209,8 @@ function support_chat_admin_conversation_payload(array $conversation): array
 {
     $conversation['dialog_id'] = (int)($conversation['id'] ?? 0);
     $conversation['display_name'] = support_chat_conversation_display_name($conversation);
+    $conversation['visitor_avatar_url'] = support_chat_conversation_avatar_url($conversation);
+    $conversation['language_label'] = support_chat_language_label((string)($conversation['visitor_language'] ?? $conversation['browser_language'] ?? ''));
     if (($conversation['channel'] ?? '') === 'web') {
         $conversation['external_id'] = '';
         $conversation['visitor_handle'] = '';
@@ -233,6 +241,113 @@ function support_chat_conversation_display_name(array $conversation): string
     }
 
     return 'Пользователь #' . (int)($conversation['id'] ?? 0);
+}
+
+function support_chat_normalize_language(string $language): string
+{
+    $language = strtolower(str_replace('_', '-', trim($language)));
+    $language = preg_replace('/[^a-z0-9-]/', '', $language) ?? '';
+    return substr($language, 0, 32);
+}
+
+function support_chat_language_label(string $language): string
+{
+    $language = support_chat_normalize_language($language);
+    if ($language === '') {
+        return '';
+    }
+
+    $base = explode('-', $language)[0] ?? $language;
+    $labels = [
+        'ru' => 'Русский',
+        'en' => 'English',
+        'uz' => "O'zbek",
+        'tg' => 'Тоҷикӣ',
+        'tj' => 'Тоҷикӣ',
+        'uk' => 'Українська',
+        'kk' => 'Қазақша',
+        'ky' => 'Кыргызча',
+        'tr' => 'Türkçe',
+        'az' => 'Azərbaycanca',
+    ];
+
+    return ($labels[$base] ?? strtoupper($base)) . ' (' . $language . ')';
+}
+
+function support_chat_avatar_storage_dir(): string
+{
+    return support_chat_base_path('storage' . DIRECTORY_SEPARATOR . 'avatars');
+}
+
+function support_chat_conversation_avatar_url(array $conversation): string
+{
+    $filename = basename((string)($conversation['visitor_avatar'] ?? ''));
+    if ($filename === '' || (int)($conversation['id'] ?? 0) <= 0) {
+        return '';
+    }
+
+    return 'api/avatar.php?id=' . (int)$conversation['id'];
+}
+
+function support_chat_store_telegram_avatar(PDO $pdo, int $conversationId, string $telegramUserId): void
+{
+    $telegramUserId = trim($telegramUserId);
+    if ($telegramUserId === '') {
+        return;
+    }
+
+    $conversation = support_chat_get_conversation($pdo, $conversationId);
+    if ($conversation === null) {
+        return;
+    }
+
+    $current = basename((string)($conversation['visitor_avatar'] ?? ''));
+    if ($current !== '' && is_file(support_chat_avatar_storage_dir() . DIRECTORY_SEPARATOR . $current)) {
+        return;
+    }
+
+    if (!function_exists('support_chat_telegram_get_user_profile_photos')) {
+        require_once __DIR__ . '/telegram.php';
+    }
+
+    try {
+        $response = support_chat_telegram_get_user_profile_photos($telegramUserId, 1);
+        $photos = $response['result']['photos'][0] ?? null;
+        if (empty($response['ok']) || !is_array($photos) || count($photos) === 0) {
+            return;
+        }
+
+        $photo = end($photos);
+        if (!is_array($photo) || empty($photo['file_id'])) {
+            return;
+        }
+
+        $dir = support_chat_avatar_storage_dir();
+        if (!is_dir($dir)) {
+            mkdir($dir, 0775, true);
+        }
+
+        $fileId = (string)$photo['file_id'];
+        $filename = $conversationId . '-' . substr(sha1($telegramUserId . '|' . $fileId), 0, 16) . '.jpg';
+        $targetPath = $dir . DIRECTORY_SEPARATOR . $filename;
+        $download = support_chat_telegram_download_file($fileId, $targetPath);
+        if (empty($download['ok'])) {
+            support_chat_log_telegram($pdo, 'incoming', 'avatar_download', [
+                'chat_id' => (string)($conversation['external_id'] ?? ''),
+                'conversation_id' => $conversationId,
+                'payload' => ['telegram_user_id' => $telegramUserId],
+                'result' => $download,
+                'success' => false,
+                'error' => (string)($download['description'] ?? 'Telegram avatar download failed'),
+            ]);
+            return;
+        }
+
+        $stmt = $pdo->prepare('UPDATE conversations SET visitor_avatar = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+        $stmt->execute([$filename, $conversationId]);
+    } catch (Throwable $e) {
+        support_chat_log_error('Telegram avatar load failed: ' . $e->getMessage());
+    }
 }
 
 function support_chat_update_conversation_status(PDO $pdo, int $id, string $status, bool $addSystemMessage = true): array
@@ -333,7 +448,9 @@ function support_chat_update_web_conversation_profile(PDO $pdo, int $conversatio
     $name = trim((string)($profile['visitor_name'] ?? $profile['name'] ?? ''));
     $userId = trim((string)($profile['visitor_user_id'] ?? $profile['user_id'] ?? ''));
     $email = trim((string)($profile['visitor_email'] ?? $profile['email'] ?? ''));
-    if ($name === '' && $userId === '' && $email === '') {
+    $language = support_chat_normalize_language((string)($profile['visitor_language'] ?? $profile['language'] ?? ''));
+    $browserLanguage = support_chat_normalize_language((string)($profile['browser_language'] ?? $profile['navigator_language'] ?? $language));
+    if ($name === '' && $userId === '' && $email === '' && $language === '' && $browserLanguage === '') {
         return;
     }
 
@@ -355,12 +472,14 @@ function support_chat_update_web_conversation_profile(PDO $pdo, int $conversatio
     $nextName = $name !== '' ? $name : (string)($conversation['visitor_name'] ?? '');
     $nextUserId = $userId !== '' ? $userId : (string)($conversation['visitor_user_id'] ?? '');
     $nextEmail = $email !== '' ? $email : (string)($conversation['visitor_email'] ?? '');
+    $nextLanguage = $language !== '' ? $language : (string)($conversation['visitor_language'] ?? '');
+    $nextBrowserLanguage = $browserLanguage !== '' ? $browserLanguage : (string)($conversation['browser_language'] ?? '');
     $stmt = $pdo->prepare('
         UPDATE conversations
-        SET visitor_name = ?, visitor_user_id = ?, visitor_email = ?, updated_at = CURRENT_TIMESTAMP
+        SET visitor_name = ?, visitor_user_id = ?, visitor_email = ?, visitor_language = ?, browser_language = ?, updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
     ');
-    $stmt->execute([$nextName, $nextUserId, $nextEmail, $conversationId]);
+    $stmt->execute([$nextName, $nextUserId, $nextEmail, $nextLanguage, $nextBrowserLanguage, $conversationId]);
 }
 
 function support_chat_find_web_conversation(PDO $pdo, string $sessionId): ?int
@@ -371,19 +490,24 @@ function support_chat_find_web_conversation(PDO $pdo, string $sessionId): ?int
     return $id ? (int)$id : null;
 }
 
-function support_chat_find_or_create_telegram_conversation(PDO $pdo, string $chatId, string $name, string $handle): int
+function support_chat_find_or_create_telegram_conversation(PDO $pdo, string $chatId, string $name, string $handle, string $language = '', string $userId = ''): int
 {
+    $language = support_chat_normalize_language($language);
+    $userId = trim($userId);
     $stmt = $pdo->prepare("SELECT id FROM conversations WHERE channel = 'telegram' AND external_id = ? LIMIT 1");
     $stmt->execute([$chatId]);
     $id = $stmt->fetchColumn();
     if ($id) {
-        $update = $pdo->prepare('UPDATE conversations SET visitor_name = ?, visitor_handle = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
-        $update->execute([$name, $handle, (int)$id]);
+        $conversation = support_chat_get_conversation($pdo, (int)$id) ?? [];
+        $nextLanguage = $language !== '' ? $language : (string)($conversation['visitor_language'] ?? '');
+        $nextUserId = $userId !== '' ? $userId : (string)($conversation['visitor_user_id'] ?? '');
+        $update = $pdo->prepare('UPDATE conversations SET visitor_name = ?, visitor_handle = ?, visitor_user_id = ?, visitor_language = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+        $update->execute([$name, $handle, $nextUserId, $nextLanguage, (int)$id]);
         return (int)$id;
     }
 
-    $stmt = $pdo->prepare("INSERT INTO conversations (channel, external_id, visitor_name, visitor_handle, status) VALUES ('telegram', ?, ?, ?, 'new')");
-    $stmt->execute([$chatId, $name, $handle]);
+    $stmt = $pdo->prepare("INSERT INTO conversations (channel, external_id, visitor_name, visitor_handle, visitor_user_id, visitor_language, status) VALUES ('telegram', ?, ?, ?, ?, ?, 'new')");
+    $stmt->execute([$chatId, $name, $handle, $userId, $language]);
     return (int)$pdo->lastInsertId();
 }
 
@@ -394,11 +518,14 @@ function support_chat_telegram_profile(array $message): ?array
     }
 
     $chat = $message['chat'];
-    $name = trim((string)($chat['first_name'] ?? '') . ' ' . (string)($chat['last_name'] ?? ''));
+    $from = isset($message['from']) && is_array($message['from']) ? $message['from'] : [];
+    $name = trim((string)($from['first_name'] ?? $chat['first_name'] ?? '') . ' ' . (string)($from['last_name'] ?? $chat['last_name'] ?? ''));
     return [
         'chat_id' => (string)$chat['id'],
         'name' => $name !== '' ? $name : 'Telegram #' . (string)$chat['id'],
-        'handle' => isset($chat['username']) ? '@' . (string)$chat['username'] : '',
+        'handle' => isset($from['username']) ? '@' . (string)$from['username'] : (isset($chat['username']) ? '@' . (string)$chat['username'] : ''),
+        'user_id' => isset($from['id']) ? (string)$from['id'] : (string)$chat['id'],
+        'language' => support_chat_normalize_language((string)($from['language_code'] ?? '')),
     ];
 }
 
@@ -511,7 +638,8 @@ function support_chat_ingest_telegram_message(PDO $pdo, array $message): ?int
     }
 
     $telegramMessageId = isset($message['message_id']) ? (string)$message['message_id'] : null;
-    $conversationId = support_chat_find_or_create_telegram_conversation($pdo, $profile['chat_id'], $profile['name'], $profile['handle']);
+    $conversationId = support_chat_find_or_create_telegram_conversation($pdo, $profile['chat_id'], $profile['name'], $profile['handle'], $profile['language'] ?? '', $profile['user_id'] ?? '');
+    support_chat_store_telegram_avatar($pdo, $conversationId, (string)($profile['user_id'] ?? ''));
     if (support_chat_telegram_message_exists($pdo, $conversationId, $telegramMessageId)) {
         support_chat_log_telegram($pdo, 'incoming', 'duplicate_message', [
             'chat_id' => $profile['chat_id'],

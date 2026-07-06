@@ -108,6 +108,7 @@ if (!support_chat_is_admin_authenticated()) {
                 <span>Источник</span><strong id="detailChannel">-</strong>
                 <span>Статус</span><strong id="detailStatus">-</strong>
                 <span>Баланс</span><strong id="detailBalance">0.00</strong>
+                <span>Язык</span><strong id="detailLanguage">-</strong>
                 <span>Создан</span><strong id="detailCreated">-</strong>
                 <span>Обновлен</span><strong id="detailUpdated">-</strong>
             </div>

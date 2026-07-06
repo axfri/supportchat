@@ -7,6 +7,8 @@ $supportUser = [
     'visitor_user_id' => trim((string)($_GET['visitor_user_id'] ?? '')),
     'visitor_email' => trim((string)($_GET['visitor_email'] ?? '')),
     'visitor_balance' => trim((string)($_GET['visitor_balance'] ?? '')),
+    'visitor_language' => trim((string)($_GET['visitor_language'] ?? '')),
+    'browser_language' => trim((string)($_GET['browser_language'] ?? '')),
 ];
 ?>
 <!doctype html>

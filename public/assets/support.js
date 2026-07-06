@@ -79,11 +79,15 @@
 
     function supportUser() {
         const user = window.FArtSupportUser || {};
+        const browserLanguage = String((navigator.languages && navigator.languages[0]) || navigator.language || '').trim();
+        const visitorLanguage = String(user.visitor_language || user.language || browserLanguage).trim();
         return {
             visitor_name: String(user.visitor_name || user.name || user.display_name || '').trim(),
             visitor_user_id: String(user.visitor_user_id || user.user_id || user.id || '').trim(),
             visitor_email: String(user.visitor_email || user.email || '').trim(),
             visitor_balance: String(user.visitor_balance ?? user.balance ?? '').trim(),
+            visitor_language: visitorLanguage,
+            browser_language: browserLanguage,
         };
     }
 

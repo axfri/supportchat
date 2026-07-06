@@ -398,6 +398,20 @@ textarea:focus-visible {
     height: 44px;
 }
 
+.avatar.has-image,
+.client-avatar.has-image {
+    overflow: hidden;
+    background: #0f172a;
+}
+
+.avatar img,
+.client-avatar img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
 .conversation-main {
     min-width: 0;
     display: grid;
@@ -481,6 +495,12 @@ textarea:focus-visible {
     background: #242936;
     color: #9aacce;
     border: 1px solid #384055;
+}
+
+.badge.lang {
+    background: rgba(139, 92, 246, .16);
+    color: #d8c7ff;
+    border: 1px solid rgba(139, 92, 246, .34);
 }
 
 .unread {
@@ -1545,6 +1565,12 @@ textarea:focus-visible {
 
 [data-theme="light"] .client-avatar {
     color: #ffffff;
+}
+
+[data-theme="light"] .badge.lang {
+    background: #f1edff;
+    color: #5b38c7;
+    border-color: rgba(91, 56, 199, .24);
 }
 
 .auth.auth-ok {
