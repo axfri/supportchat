@@ -44,6 +44,7 @@
     const staffList = document.getElementById('staffList');
     const loadTelegramLogs = document.getElementById('loadTelegramLogs');
     const telegramLogList = document.getElementById('telegramLogList');
+    const adminPageLink = document.getElementById('adminPageLink');
 
     let isAuthorized = false;
     let currentRole = '';
@@ -173,6 +174,11 @@
         if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
         if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
         return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB';
+    }
+
+    function normalizeMoneyInput(input) {
+        const value = String(input || '').trim().replace(/\s+/g, '').replace(',', '.');
+        return /^-?\d+(\.\d{1,2})?$/.test(value) ? value : '';
     }
 
     function initials(item) {
@@ -615,13 +621,13 @@
     }
 
     async function loadStaff() {
-        if (currentRole !== 'admin') return;
+        if (currentRole !== 'admin' || !staffList) return;
         const data = await api('api/staff.php');
         renderStaff(data.staff || []);
     }
 
     async function loadLogs() {
-        if (currentRole !== 'admin') return;
+        if (currentRole !== 'admin' || !telegramLogList) return;
         const data = await api('api/telegram_logs.php?limit=80');
         telegramLogList.innerHTML = (data.logs || []).map((item) => `
             <div class="admin-mini-item">
@@ -867,6 +873,7 @@
             });
             currentRole = loginData.role || '';
             if (adminTools) adminTools.hidden = currentRole !== 'admin';
+            if (adminPageLink) adminPageLink.hidden = currentRole !== 'admin';
             if (adminPassword) adminPassword.value = '';
             setAuthorizedState(true);
             initEmojiPicker();
@@ -930,13 +937,21 @@
     balanceForm.addEventListener('submit', async (event) => {
         event.preventDefault();
         if (!selectedId) return;
+        const normalizedBalance = normalizeMoneyInput(balanceInput.value);
+        if (!normalizedBalance) {
+            balanceHistory.innerHTML = '<div class="empty-inline">Введите корректный баланс, например 902.00</div>';
+            return;
+        }
+        const saveText = balanceSave.textContent;
+        balanceSave.disabled = true;
+        balanceSave.textContent = 'Сохранение...';
         try {
             await api('api/balance.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     conversation_id: selectedId,
-                    balance: balanceInput.value,
+                    balance: normalizedBalance,
                     comment: balanceComment.value.trim(),
                 }),
             });
@@ -946,9 +961,11 @@
         } catch (error) {
             showError(error.message || 'Не удалось изменить баланс');
         }
+        balanceSave.disabled = false;
+        balanceSave.textContent = saveText;
     });
 
-    staffForm.addEventListener('submit', async (event) => {
+    if (staffForm) staffForm.addEventListener('submit', async (event) => {
         event.preventDefault();
         try {
             await api('api/staff.php', {
@@ -969,7 +986,7 @@
         }
     });
 
-    staffList.addEventListener('click', async (event) => {
+    if (staffList) staffList.addEventListener('click', async (event) => {
         const button = event.target.closest('[data-staff-action]');
         if (!button) return;
         try {
@@ -990,7 +1007,7 @@
         }
     });
 
-    loadTelegramLogs.addEventListener('click', loadLogs);
+    if (loadTelegramLogs) loadTelegramLogs.addEventListener('click', loadLogs);
 
     if (adminThemeToggle) {
         adminThemeToggle.addEventListener('click', () => {
@@ -1080,6 +1097,7 @@
         .then((data) => {
             currentRole = data.role || '';
             if (adminTools) adminTools.hidden = currentRole !== 'admin';
+            if (adminPageLink) adminPageLink.hidden = currentRole !== 'admin';
             setAuthorizedState(Boolean(data.authenticated));
             if (isAuthorized) {
                 initEmojiPicker();

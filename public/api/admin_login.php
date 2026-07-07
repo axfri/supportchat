@@ -26,6 +26,7 @@ if ($method !== 'POST') {
 $data = support_chat_input();
 $login = trim((string)($data['login'] ?? ''));
 $password = (string)($data['password'] ?? '');
+$requiredRole = trim((string)($data['required_role'] ?? ''));
 
 if ($login === '' || $password === '') {
     support_chat_json(['ok' => false, 'error' => 'Введите логин и пароль'], 422);
@@ -34,6 +35,14 @@ if ($login === '' || $password === '') {
 $user = support_chat_admin_user_by_credentials($login, $password);
 if ($user === null) {
     support_chat_json(['ok' => false, 'error' => 'Неверный логин или пароль'], 401);
+}
+
+if ($requiredRole === 'admin' && (string)$user['role'] !== 'admin') {
+    support_chat_json(['ok' => false, 'error' => 'Войдите под администратором'], 403);
+}
+
+if ($requiredRole === 'manager' && (string)$user['role'] === 'admin') {
+    support_chat_json(['ok' => false, 'error' => 'Для администратора используйте отдельный вход'], 403);
 }
 
 support_chat_admin_login((string)$user['login'], (string)$user['role'], (int)$user['id']);

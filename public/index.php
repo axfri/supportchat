@@ -38,7 +38,10 @@ if (!support_chat_is_admin_authenticated()) {
                 <a class="fart-logo" href="#" aria-label="F-ART.bot">
                     <b>F</b><strong>-ART</strong><small>.bot</small>
                 </a>
-                <button class="admin-theme-toggle" id="adminThemeToggle" type="button" aria-label="Переключить тему">T</button>
+                <div class="brand-actions">
+                    <a class="admin-page-link" id="adminPageLink" href="admin.php" hidden>Админ</a>
+                    <button class="admin-theme-toggle" id="adminThemeToggle" type="button" aria-label="Переключить тему">T</button>
+                </div>
             </div>
 
             <div class="section-title compact-title">
@@ -115,7 +118,7 @@ if (!support_chat_is_admin_authenticated()) {
             <div class="details-card">
                 <h3>Баланс пользователя</h3>
                 <form class="balance-form" id="balanceForm">
-                    <input id="balanceInput" type="number" step="0.01" placeholder="Новый баланс" disabled>
+                    <input id="balanceInput" type="text" inputmode="decimal" placeholder="Новый баланс" disabled>
                     <input id="balanceComment" type="text" placeholder="Комментарий" disabled>
                     <button type="submit" class="secondary-button" disabled id="balanceSave">Сохранить</button>
                 </form>
@@ -133,21 +136,6 @@ if (!support_chat_is_admin_authenticated()) {
             <div class="details-card">
                 <h3>Заметка</h3>
                 <textarea class="note" id="operatorNote" placeholder="Личная заметка оператора"></textarea>
-            </div>
-            <div class="details-card admin-only" id="adminTools" hidden>
-                <h3>Администрирование</h3>
-                <form class="staff-form" id="staffForm">
-                    <input id="staffLogin" type="text" placeholder="Логин менеджера">
-                    <input id="staffPassword" type="password" placeholder="Пароль">
-                    <select id="staffRole">
-                        <option value="manager">manager</option>
-                        <option value="admin">admin</option>
-                    </select>
-                    <button type="submit" class="secondary-button">Добавить</button>
-                </form>
-                <div class="admin-mini-list" id="staffList"></div>
-                <button type="button" class="secondary-button" id="loadTelegramLogs">Показать Telegram-лог</button>
-                <div class="admin-mini-list telegram-log-list" id="telegramLogList"></div>
             </div>
         </aside>
     </main>

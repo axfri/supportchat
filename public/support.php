@@ -104,6 +104,6 @@ $supportUser = [
         </section>
     </main>
 
-    <script src="assets/support.js?v=20260701-support-tasks"></script>
+    <script src="assets/support.js?v=20260707-i18n"></script>
 </body>
 </html>

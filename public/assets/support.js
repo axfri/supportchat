@@ -18,6 +18,104 @@
         LIGHT: 'light',
         DARK: 'dark',
     };
+    const SUPPORT_I18N = {
+        ru: {
+            support: 'Поддержка', home: 'Главная', webPanel: 'Web панель', theme: 'Тема', light: 'Светлая', dark: 'Тёмная',
+            lightTheme: 'Светлая тема', darkTheme: 'Тёмная тема', switchLight: 'Переключить на светлую тему', switchDark: 'Переключить на тёмную тему',
+            onlineSupport: 'Онлайн-поддержка', title: 'Напишите нам, мы рядом',
+            text: 'Напишите, что случилось. Мы спокойно разберёмся, подскажем по шагам и вернёмся с ответом прямо в этом диалоге.',
+            nearby: 'Рядом', nearbyText: 'поможем без лишней суеты', webText: 'единая история чата',
+            dialog: 'Диалог с поддержкой', subtitle: 'Обычно отвечаем в течение нескольких минут',
+            placeholder: 'Введите сообщение', newPlaceholder: 'Напишите новое сообщение', send: 'Отправить', sending: 'Отправка',
+            hello: 'Здравствуйте!', welcome: 'Опишите вопрос одним сообщением, оператор ответит в этом чате.',
+            supportAuthor: 'Поддержка', systemAuthor: 'Система', you: 'Вы', closed: 'Диалог закрыт, новое сообщение откроет его снова',
+            connectionProblem: 'Проблема соединения, пробуем обновить чат', addFile: 'Добавить файл', insertEmoji: 'Вставить эмодзи',
+            photo: 'Фото', video: 'Видео', file: 'Файл', files: 'Файлы', deleted: 'Сообщение удалено', deliveryError: 'Ошибка доставки',
+            loadError: 'Ошибка загрузки', sendError: 'Ошибка отправки', networkError: 'Ошибка сети', download: 'Скачать',
+        },
+        en: {
+            support: 'Support', home: 'Home', webPanel: 'Web panel', theme: 'Theme', light: 'Light', dark: 'Dark',
+            lightTheme: 'Light theme', darkTheme: 'Dark theme', switchLight: 'Switch to light theme', switchDark: 'Switch to dark theme',
+            onlineSupport: 'Online support', title: 'Message us, we are nearby',
+            text: 'Tell us what happened. We will check it calmly, guide you step by step and reply in this dialog.',
+            nearby: 'Nearby', nearbyText: 'we will help without extra noise', webText: 'single chat history',
+            dialog: 'Support dialog', subtitle: 'We usually reply within a few minutes',
+            placeholder: 'Enter a message', newPlaceholder: 'Write a new message', send: 'Send', sending: 'Sending',
+            hello: 'Hello!', welcome: 'Describe your question in one message, an operator will reply in this chat.',
+            supportAuthor: 'Support', systemAuthor: 'System', you: 'You', closed: 'The dialog is closed, a new message will reopen it',
+            connectionProblem: 'Connection problem, trying to refresh the chat', addFile: 'Add file', insertEmoji: 'Insert emoji',
+            photo: 'Photo', video: 'Video', file: 'File', files: 'Files', deleted: 'Message deleted', deliveryError: 'Delivery error',
+            loadError: 'Loading error', sendError: 'Sending error', networkError: 'Network error', download: 'Download',
+        },
+        tg: { support: 'Дастгирӣ', home: 'Асосӣ', webPanel: 'Web панел', light: 'Равшан', dark: 'Торик', onlineSupport: 'Дастгирии онлайн', title: 'Ба мо нависед, мо наздикем', text: 'Нависед, чӣ шуд. Мо оромона месанҷем ва дар ҳамин чат ҷавоб медиҳем.', nearby: 'Наздик', nearbyText: 'бе саросемагӣ кӯмак мекунем', webText: 'таърихи ягонаи чат', dialog: 'Чат бо дастгирӣ', subtitle: 'Одатан дар чанд дақиқа ҷавоб медиҳем', placeholder: 'Паём нависед', send: 'Фиристодан', sending: 'Фиристода мешавад', hello: 'Салом!', welcome: 'Саволро бо як паём нависед, оператор дар ҳамин чат ҷавоб медиҳад.', supportAuthor: 'Дастгирӣ', systemAuthor: 'Система', you: 'Шумо' },
+        uz: { support: 'Yordam', home: 'Asosiy', webPanel: 'Web panel', light: "Yorug'", dark: "Qorong'i", onlineSupport: 'Onlayn yordam', title: 'Bizga yozing, biz yoningizdamiz', text: 'Nima bo‘lganini yozing. Biz vaziyatni ko‘rib chiqamiz va shu chatda javob beramiz.', nearby: 'Yonida', nearbyText: 'ortiqcha shovqinsiz yordam beramiz', webText: 'yagona chat tarixi', dialog: 'Yordam bilan dialog', subtitle: 'Odatda bir necha daqiqada javob beramiz', placeholder: 'Xabar kiriting', send: 'Yuborish', sending: 'Yuborilmoqda', hello: 'Salom!', welcome: 'Savolingizni bitta xabar bilan yozing, operator shu chatda javob beradi.', supportAuthor: 'Yordam', systemAuthor: 'Tizim', you: 'Siz' },
+        ky: { support: 'Колдоо', home: 'Башкы', webPanel: 'Web панел', light: 'Жарык', dark: 'Караңгы', onlineSupport: 'Онлайн колдоо', title: 'Бизге жазыңыз, биз жакынбыз', text: 'Эмне болгонун жазыңыз. Биз текшерип, ушул чатта жооп беребиз.', nearby: 'Жакын', nearbyText: 'ашыкча убарасыз жардам беребиз', webText: 'чаттын бирдиктүү тарыхы', dialog: 'Колдоо менен диалог', subtitle: 'Адатта бир нече мүнөттө жооп беребиз', placeholder: 'Билдирүү киргизиңиз', send: 'Жөнөтүү', sending: 'Жөнөтүлүүдө', hello: 'Салам!', welcome: 'Сурооңузду бир билдирүү менен жазыңыз, оператор ушул чатта жооп берет.', supportAuthor: 'Колдоо', systemAuthor: 'Система', you: 'Сиз' },
+        kk: { support: 'Қолдау', home: 'Басты', webPanel: 'Web панель', light: 'Жарық', dark: 'Қараңғы', onlineSupport: 'Онлайн қолдау', title: 'Бізге жазыңыз, біз жақынбыз', text: 'Не болғанын жазыңыз. Біз тексеріп, осы чатта жауап береміз.', nearby: 'Жақын', nearbyText: 'артық әуре қылмай көмектесеміз', webText: 'чаттың бірыңғай тарихы', dialog: 'Қолдау диалогы', subtitle: 'Әдетте бірнеше минут ішінде жауап береміз', placeholder: 'Хабарлама енгізіңіз', send: 'Жіберу', sending: 'Жіберілуде', hello: 'Сәлеметсіз бе!', welcome: 'Сұрағыңызды бір хабарламада жазыңыз, оператор осы чатта жауап береді.', supportAuthor: 'Қолдау', systemAuthor: 'Жүйе', you: 'Сіз' },
+        uk: { support: 'Підтримка', home: 'Головна', webPanel: 'Web панель', light: 'Світла', dark: 'Темна', onlineSupport: 'Онлайн-підтримка', title: 'Напишіть нам, ми поруч', text: 'Напишіть, що сталося. Ми спокійно розберемося і відповімо в цьому чаті.', nearby: 'Поруч', nearbyText: 'допоможемо без зайвої метушні', webText: 'єдина історія чату', dialog: 'Діалог з підтримкою', subtitle: 'Зазвичай відповідаємо протягом кількох хвилин', placeholder: 'Введіть повідомлення', send: 'Надіслати', sending: 'Надсилання', hello: 'Вітаємо!', welcome: 'Опишіть питання одним повідомленням, оператор відповість у цьому чаті.', supportAuthor: 'Підтримка', systemAuthor: 'Система', you: 'Ви' },
+        be: { support: 'Падтрымка', home: 'Галоўная', webPanel: 'Web панэль', light: 'Светлая', dark: 'Цёмная', onlineSupport: 'Анлайн-падтрымка', title: 'Напішыце нам, мы побач', text: 'Напішыце, што здарылася. Мы спакойна разбяромся і адкажам у гэтым чаце.', nearby: 'Побач', nearbyText: 'дапаможам без лішняй мітусні', webText: 'адзіная гісторыя чата', dialog: 'Дыялог з падтрымкай', subtitle: 'Звычайна адказваем на працягу некалькіх хвілін', placeholder: 'Увядзіце паведамленне', send: 'Адправіць', sending: 'Адпраўка', hello: 'Вітаем!', welcome: 'Апішэце пытанне адным паведамленнем, аператар адкажа ў гэтым чаце.', supportAuthor: 'Падтрымка', systemAuthor: 'Сістэма', you: 'Вы' },
+        hy: { support: 'Աջակցություն', home: 'Գլխավոր', webPanel: 'Web վահանակ', light: 'Բաց', dark: 'Մուգ', onlineSupport: 'Առցանց աջակցություն', title: 'Գրեք մեզ, մենք մոտ ենք', text: 'Գրեք, թե ինչ է պատահել։ Մենք կստուգենք և կպատասխանենք այս չատում։', nearby: 'Մոտ ենք', nearbyText: 'կօգնենք առանց ավելորդ աղմուկի', webText: 'չատի միասնական պատմություն', dialog: 'Աջակցության երկխոսություն', subtitle: 'Սովորաբար պատասխանում ենք մի քանի րոպեում', placeholder: 'Մուտքագրեք հաղորդագրություն', send: 'Ուղարկել', sending: 'Ուղարկվում է', hello: 'Բարև!', welcome: 'Նկարագրեք հարցը մեկ հաղորդագրությամբ, օպերատորը կպատասխանի այս չատում։', supportAuthor: 'Աջակցություն', systemAuthor: 'Համակարգ', you: 'Դուք' },
+        az: { support: 'Dəstək', home: 'Əsas', webPanel: 'Web panel', light: 'Açıq', dark: 'Tünd', onlineSupport: 'Onlayn dəstək', title: 'Bizə yazın, yanınızdayıq', text: 'Nə baş verdiyini yazın. Biz yoxlayıb bu çatda cavab verəcəyik.', nearby: 'Yanınızda', nearbyText: 'artıq səs-küysüz kömək edəcəyik', webText: 'vahid çat tarixçəsi', dialog: 'Dəstək dialoqu', subtitle: 'Adətən bir neçə dəqiqə ərzində cavab veririk', placeholder: 'Mesaj daxil edin', send: 'Göndər', sending: 'Göndərilir', hello: 'Salam!', welcome: 'Sualınızı bir mesajla yazın, operator bu çatda cavab verəcək.', supportAuthor: 'Dəstək', systemAuthor: 'Sistem', you: 'Siz' },
+    };
+
+    function normalizeLanguage(value) {
+        const language = String(value || '').toLowerCase();
+        if (language.startsWith('en')) return 'en';
+        if (language.startsWith('tg') || language.startsWith('tj')) return 'tg';
+        if (language.startsWith('uz')) return 'uz';
+        if (language.startsWith('ky')) return 'ky';
+        if (language.startsWith('kk')) return 'kk';
+        if (language.startsWith('uk')) return 'uk';
+        if (language.startsWith('be')) return 'be';
+        if (language.startsWith('hy')) return 'hy';
+        if (language.startsWith('az')) return 'az';
+        return 'ru';
+    }
+
+    function supportLanguage() {
+        const user = window.FArtSupportUser || {};
+        return normalizeLanguage(user.visitor_language || user.language || user.browser_language || navigator.language || 'ru');
+    }
+
+    function text(key) {
+        const language = supportLanguage();
+        return Object.assign({}, SUPPORT_I18N.ru, language === 'ru' ? {} : SUPPORT_I18N.en, SUPPORT_I18N[language] || {})[key] || key;
+    }
+
+    function applyStaticText() {
+        document.documentElement.lang = supportLanguage();
+        document.title = text('support') + ' - F-ART.bot';
+        const topLinks = document.querySelectorAll('.top-links a');
+        if (topLinks[0]) topLinks[0].textContent = text('home');
+        if (topLinks[1]) topLinks[1].textContent = text('webPanel');
+        if (topLinks[2]) topLinks[2].textContent = text('support');
+        const stage = document.querySelector('.support-stage');
+        if (stage) {
+            const kicker = stage.querySelector('.stage-kicker');
+            const title = stage.querySelector('h1');
+            const paragraph = stage.querySelector('p');
+            const stats = stage.querySelectorAll('.support-stats span');
+            if (kicker) kicker.textContent = text('onlineSupport');
+            if (title) title.textContent = text('title');
+            if (paragraph) paragraph.textContent = text('text');
+            if (stats[0]) {
+                stats[0].querySelector('b').textContent = text('nearby');
+                stats[0].querySelector('small').textContent = text('nearbyText');
+            }
+            if (stats[1]) {
+                stats[1].querySelector('b').textContent = 'Web';
+                stats[1].querySelector('small').textContent = text('webText');
+            }
+        }
+        const heading = document.querySelector('.support-brand h2');
+        if (heading) heading.textContent = text('dialog');
+        if (subtitle) subtitle.textContent = text('subtitle');
+        if (messageInput) messageInput.placeholder = text('placeholder');
+        if (sendButton) sendButton.textContent = text('send');
+        if (attachButton) {
+            attachButton.title = text('addFile');
+            attachButton.setAttribute('aria-label', text('addFile'));
+        }
+    }
 
     let messageSignature = '';
     let loadedMessages = [];
@@ -35,9 +133,9 @@
     function updateThemeToggleButton(theme) {
         if (!themeToggle) return;
         const isDark = theme === THEMES.DARK;
-        themeToggle.innerHTML = `<span aria-hidden="true">${isDark ? '☼' : '◐'}</span><b>${isDark ? 'Светлая' : 'Тёмная'}</b>`;
-        themeToggle.title = isDark ? 'Светлая тема' : 'Тёмная тема';
-        themeToggle.setAttribute('aria-label', isDark ? 'Переключить на светлую тему' : 'Переключить на тёмную тему');
+        themeToggle.innerHTML = `<span aria-hidden="true">${isDark ? '☼' : '◐'}</span><b>${isDark ? text('light') : text('dark')}</b>`;
+        themeToggle.title = isDark ? text('lightTheme') : text('darkTheme');
+        themeToggle.setAttribute('aria-label', isDark ? text('switchLight') : text('switchDark'));
         themeToggle.setAttribute('aria-pressed', String(isDark));
     }
 
@@ -130,11 +228,11 @@
         if (attachments.length === 1) {
             const att = attachments[0];
             const mime = String(att.mime_type || '');
-            if (mime.startsWith('image/')) return 'Фото: ' + escapeHtml(att.original_filename || 'изображение');
-            if (mime.startsWith('video/')) return 'Видео: ' + escapeHtml(att.original_filename || 'видео');
-            return 'Файл: ' + escapeHtml(att.original_filename || 'файл');
+            if (mime.startsWith('image/')) return text('photo') + ': ' + escapeHtml(att.original_filename || 'image');
+            if (mime.startsWith('video/')) return text('video') + ': ' + escapeHtml(att.original_filename || 'video');
+            return text('file') + ': ' + escapeHtml(att.original_filename || 'file');
         }
-        return 'Файлы: ' + attachments.length;
+        return text('files') + ': ' + attachments.length;
     }
 
     function insertAtCursor(input, text) {
@@ -150,8 +248,8 @@
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'emoji-button';
-        button.title = 'Вставить эмодзи';
-        button.setAttribute('aria-label', 'Вставить эмодзи');
+        button.title = text('insertEmoji');
+        button.setAttribute('aria-label', text('insertEmoji'));
         button.textContent = '☺';
 
         const picker = document.createElement('div');
@@ -187,9 +285,9 @@
         modal.innerHTML = `
             <div class="file-view-modal__backdrop" data-file-close></div>
             <section class="file-view-modal__panel" role="dialog" aria-modal="true">
-                <button type="button" class="file-view-modal__close" data-file-close aria-label="Закрыть">x</button>
+                <button type="button" class="file-view-modal__close" data-file-close aria-label="Close">x</button>
                 <div class="file-view-modal__body"></div>
-                <a class="file-view-modal__download" href="#" download>Скачать</a>
+                <a class="file-view-modal__download" href="#" download>${text('download')}</a>
             </section>
         `;
         document.body.appendChild(modal);
@@ -290,8 +388,8 @@
         if (items.length === 0) {
             messages.innerHTML = `
                 <div class="welcome">
-                    <strong>Здравствуйте!</strong>
-                    <span>Опишите вопрос одним сообщением, оператор ответит в этом чате.</span>
+                    <strong>${text('hello')}</strong>
+                    <span>${text('welcome')}</span>
                 </div>
             `;
             return;
@@ -300,13 +398,13 @@
         messages.innerHTML = items.map((message) => {
             const isDeleted = Boolean(message.is_deleted_for_user);
             const senderClass = message.sender === 'support' ? 'support' : message.sender === 'system' ? 'system' : 'visitor';
-            const author = message.sender === 'support' ? 'Поддержка' : message.sender === 'system' ? 'Система' : 'Вы';
+            const author = message.sender === 'support' ? text('supportAuthor') : message.sender === 'system' ? text('systemAuthor') : text('you');
             return `
             <div class="message-row ${senderClass}${isDeleted ? ' message-deleted' : ''}">
                 <div class="message-line">
                     <article class="message ${senderClass}${message.delivery_error ? ' message-delivery-error' : ''}">
-                        <div class="message-body">${isDeleted ? '<em>Сообщение удалено</em>' : messageBodyText(message)}</div>
-                        ${!isDeleted && message.delivery_error ? `<div class="message-error-note">Ошибка доставки: ${escapeHtml(message.delivery_error)}</div>` : ``}
+                        <div class="message-body">${isDeleted ? '<em>' + text('deleted') + '</em>' : messageBodyText(message)}</div>
+                        ${!isDeleted && message.delivery_error ? `<div class="message-error-note">${text('deliveryError')}: ${escapeHtml(message.delivery_error)}</div>` : ``}
                         ${!isDeleted ? renderAttachments(message.attachments || []) : ''}
                     </article>
                 </div>
@@ -334,12 +432,12 @@
         if (!conversation) return;
         if (conversation.status === 'closed') {
             status.textContent = 'closed';
-            subtitle.textContent = 'Диалог закрыт, новое сообщение откроет его снова';
-            messageInput.placeholder = 'Напишите новое сообщение';
+            subtitle.textContent = text('closed');
+            messageInput.placeholder = text('newPlaceholder');
         } else {
             status.textContent = 'online';
-            subtitle.textContent = 'Обычно отвечаем в течение нескольких минут';
-            messageInput.placeholder = 'Введите сообщение';
+            subtitle.textContent = text('subtitle');
+            messageInput.placeholder = text('placeholder');
         }
     }
 
@@ -349,7 +447,7 @@
             .then((response) => response.json())
             .then((data) => {
                 if (!data.ok) {
-                    throw new Error(data.error || 'Ошибка загрузки');
+                    throw new Error(data.error || text('loadError'));
                 }
                 applyConversationState(data.conversation);
                 const unread = Number(data.conversation?.unread_visitor || 0);
@@ -365,7 +463,7 @@
             })
             .catch(() => {
                 status.textContent = 'offline';
-                subtitle.textContent = 'Проблема соединения, пробуем обновить чат';
+                subtitle.textContent = text('connectionProblem');
             });
     }
 
@@ -375,7 +473,7 @@
         sendButton.disabled = true;
         messageInput.disabled = true;
         attachButton.disabled = true;
-        sendButton.textContent = 'Отправка';
+        sendButton.textContent = text('sending');
         try {
             const formData = new FormData();
             formData.append('body', body);
@@ -390,7 +488,7 @@
             });
             const data = await res.json();
             if (!data.ok) {
-                throw new Error(data.error || 'Ошибка отправки');
+                throw new Error(data.error || text('sendError'));
             }
             messageInput.value = '';
             selectedFiles = [];
@@ -398,13 +496,13 @@
             autosize();
             await loadMessages();
         } catch (err) {
-            alert(err.message || 'Ошибка сети');
+            alert(err.message || text('networkError'));
         } finally {
             sending = false;
             sendButton.disabled = false;
             messageInput.disabled = false;
             attachButton.disabled = false;
-            sendButton.textContent = 'Отправить';
+            sendButton.textContent = text('send');
             messageInput.focus();
         }
     }
@@ -458,6 +556,7 @@
         sendMessage(body);
     });
 
+    applyStaticText();
     initTheme();
     initEmojiPicker();
     setInterval(loadMessages, 2500);
