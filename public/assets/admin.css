@@ -1278,12 +1278,14 @@ textarea:focus-visible {
 }
 
 .balance-form,
+.translation-form,
 .staff-form {
     display: grid;
     gap: 8px;
 }
 
 .balance-form input,
+.translation-form input[type="text"],
 .staff-form input,
 .staff-form select {
     width: 100%;
@@ -1293,6 +1295,57 @@ textarea:focus-visible {
     background: #1a1d27;
     color: var(--text);
     padding: 0 10px;
+}
+
+.translation-toggle {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 850;
+}
+
+.translation-toggle input {
+    width: 18px;
+    height: 18px;
+    accent-color: var(--blue);
+}
+
+.translation-note {
+    margin-top: 10px;
+    color: var(--muted);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.45;
+}
+
+.translated-message {
+    display: grid;
+    gap: 8px;
+}
+
+.translation-badge {
+    width: fit-content;
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 0 9px;
+    border-radius: 999px;
+    background: rgba(8, 119, 255, .14);
+    color: #83bbff;
+    font-size: 11px;
+    font-weight: 900;
+}
+
+.translated-message details {
+    color: var(--muted);
+    font-size: 13px;
+}
+
+.translated-message summary {
+    cursor: pointer;
+    font-weight: 850;
 }
 
 .admin-mini-list {

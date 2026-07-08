@@ -125,6 +125,18 @@ if (!support_chat_is_admin_authenticated()) {
                 <div class="admin-mini-list" id="balanceHistory"></div>
             </div>
             <div class="details-card">
+                <h3>Перевод</h3>
+                <form class="translation-form" id="translationForm">
+                    <label class="translation-toggle">
+                        <input id="autoTranslateSupport" type="checkbox" disabled>
+                        <span>Переводить ответы пользователю</span>
+                    </label>
+                    <input id="replyLanguage" type="text" placeholder="Пусто = язык клиента, например en" disabled>
+                    <button type="submit" class="secondary-button" id="translationSave" disabled>Сохранить</button>
+                </form>
+                <div class="translation-note">Менеджер пишет по-русски. Оставьте поле пустым, чтобы отправлять ответ на языке последнего сообщения клиента.</div>
+            </div>
+            <div class="details-card">
                 <h3>Действия</h3>
                 <div class="action-grid">
                     <button type="button" class="secondary-button" data-status-action="new">Новый</button>

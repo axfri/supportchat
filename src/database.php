@@ -39,6 +39,8 @@ function support_chat_migrate(PDO $pdo): void
             visitor_avatar TEXT NOT NULL DEFAULT '',
             visitor_language TEXT NOT NULL DEFAULT '',
             browser_language TEXT NOT NULL DEFAULT '',
+            auto_translate_support INTEGER NOT NULL DEFAULT 0,
+            reply_language TEXT NOT NULL DEFAULT '',
             balance REAL NOT NULL DEFAULT 0,
             status TEXT NOT NULL DEFAULT 'open',
             unread_support INTEGER NOT NULL DEFAULT 0,
@@ -60,6 +62,12 @@ function support_chat_migrate(PDO $pdo): void
             is_deleted_for_user INTEGER NOT NULL DEFAULT 0,
             deleted_at TEXT,
             deleted_for_user_at TEXT,
+            translated_body TEXT NOT NULL DEFAULT '',
+            detected_language TEXT NOT NULL DEFAULT '',
+            translated_to TEXT NOT NULL DEFAULT '',
+            translation_provider TEXT NOT NULL DEFAULT '',
+            translation_error TEXT NOT NULL DEFAULT '',
+            translated_at TEXT,
             created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY(conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
         )
@@ -76,6 +84,8 @@ function support_chat_migrate(PDO $pdo): void
         'visitor_avatar' => "TEXT NOT NULL DEFAULT ''",
         'visitor_language' => "TEXT NOT NULL DEFAULT ''",
         'browser_language' => "TEXT NOT NULL DEFAULT ''",
+        'auto_translate_support' => "INTEGER NOT NULL DEFAULT 0",
+        'reply_language' => "TEXT NOT NULL DEFAULT ''",
         'balance' => "REAL NOT NULL DEFAULT 0",
     ] as $name => $definition) {
         if (!in_array($name, $conversationColumnNames, true)) {
@@ -97,6 +107,18 @@ function support_chat_migrate(PDO $pdo): void
     }
     if (!in_array('delivery_error', $columnNames, true)) {
         $pdo->exec('ALTER TABLE messages ADD COLUMN delivery_error TEXT');
+    }
+    foreach ([
+        'translated_body' => "TEXT NOT NULL DEFAULT ''",
+        'detected_language' => "TEXT NOT NULL DEFAULT ''",
+        'translated_to' => "TEXT NOT NULL DEFAULT ''",
+        'translation_provider' => "TEXT NOT NULL DEFAULT ''",
+        'translation_error' => "TEXT NOT NULL DEFAULT ''",
+        'translated_at' => "TEXT",
+    ] as $name => $definition) {
+        if (!in_array($name, $columnNames, true)) {
+            $pdo->exec("ALTER TABLE messages ADD COLUMN {$name} {$definition}");
+        }
     }
 
     $pdo->exec("
@@ -211,6 +233,8 @@ function support_chat_admin_conversation_payload(array $conversation): array
     $conversation['display_name'] = support_chat_conversation_display_name($conversation);
     $conversation['visitor_avatar_url'] = support_chat_conversation_avatar_url($conversation);
     $conversation['language_label'] = support_chat_language_label((string)($conversation['visitor_language'] ?? $conversation['browser_language'] ?? ''));
+    $conversation['auto_translate_support'] = (bool)($conversation['auto_translate_support'] ?? false);
+    $conversation['reply_language'] = support_chat_normalize_language((string)($conversation['reply_language'] ?? ''));
     if (($conversation['channel'] ?? '') === 'web') {
         $conversation['external_id'] = '';
         $conversation['visitor_handle'] = '';
@@ -408,6 +432,10 @@ function support_chat_add_message(PDO $pdo, int $conversationId, string $sender,
     $stmt = $pdo->prepare('INSERT INTO messages (conversation_id, sender, body, telegram_message_id) VALUES (?, ?, ?, ?)');
     $stmt->execute([$conversationId, $sender, $body, $telegramMessageId]);
     $messageId = (int)$pdo->lastInsertId();
+    if ($sender === 'visitor') {
+        require_once __DIR__ . '/translate.php';
+        support_chat_translate_visitor_message_to_ru($pdo, $messageId, $body);
+    }
 
     if ($sender === 'visitor') {
         $stmt = $pdo->prepare("UPDATE conversations SET status = CASE WHEN status = 'closed' THEN 'new' ELSE status END, unread_support = unread_support + 1, updated_at = CURRENT_TIMESTAMP WHERE id = ?");

@@ -117,6 +117,8 @@
 
     function messageBodyText(message) {
         const attachments = message.attachments || [];
+        const translated = String(message.translated_body || '').trim();
+        if (message.sender === 'support' && translated !== '') return escapeHtml(translated);
         const body = String(message.body || '').trim();
         if (body !== '' && body !== '[файл]' && body !== 'Файл') return escapeHtml(body);
         if (!attachments.length) return escapeHtml(body || '');
@@ -224,7 +226,7 @@
     function render(items, keepScroll = false) {
         const previousHeight = messages.scrollHeight;
         const previousTop = messages.scrollTop;
-        const nextSignature = JSON.stringify(items.map((message) => [message.id, message.sender, message.body, message.delivery_error || '', (message.attachments || []).map(a => [a.id, a.original_filename, a.mime_type].join(':')).join(','), message.is_deleted_by_visitor, message.is_deleted_for_user]));
+        const nextSignature = JSON.stringify(items.map((message) => [message.id, message.sender, message.body, message.translated_body || '', message.delivery_error || '', (message.attachments || []).map(a => [a.id, a.original_filename, a.mime_type].join(':')).join(','), message.is_deleted_by_visitor, message.is_deleted_for_user]));
         if (nextSignature === signature) return;
         signature = nextSignature;
 

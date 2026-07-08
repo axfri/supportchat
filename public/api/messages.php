@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../../src/http.php';
 require_once __DIR__ . '/../../src/database.php';
 require_once __DIR__ . '/../../src/telegram.php';
+require_once __DIR__ . '/../../src/translate.php';
 
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'OPTIONS') {
     support_chat_json(['ok' => true]);
@@ -377,6 +378,23 @@ if ($method === 'DELETE' || ($method === 'POST' && (($data['action'] ?? '') === 
     }
 }
 
+if ($method === 'POST' && $isAdmin && (($data['action'] ?? '') === 'translation_settings')) {
+    $conversationId = (int)($data['conversation_id'] ?? 0);
+    $enabled = !empty($data['enabled']) ? 1 : 0;
+    $replyLanguage = support_chat_translation_base_language((string)($data['reply_language'] ?? ''));
+    if ($conversationId <= 0) {
+        support_chat_json(['ok' => false, 'error' => 'Диалог не выбран'], 422);
+    }
+    $conversation = support_chat_get_conversation($pdo, $conversationId);
+    if ($conversation === null) {
+        support_chat_json(['ok' => false, 'error' => 'Диалог не найден'], 404);
+    }
+    $stmt = $pdo->prepare('UPDATE conversations SET auto_translate_support = ?, reply_language = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+    $stmt->execute([$enabled, $replyLanguage, $conversationId]);
+    $updated = support_chat_get_conversation($pdo, $conversationId);
+    support_chat_json(['ok' => true, 'conversation' => support_chat_admin_conversation_payload($updated ?: $conversation)]);
+}
+
 if ($method === 'POST') {
     $body = trim((string)($data['body'] ?? ''));
     $contentLength = (int)($_SERVER['CONTENT_LENGTH'] ?? 0);
@@ -391,6 +409,9 @@ if ($method === 'POST') {
     if ($body === '' && !$hasFiles) {
         support_chat_json(['ok' => false, 'error' => 'Нужно написать сообщение или прикрепить файл'], 422);
     }
+
+    $storedAttachments = [];
+    $uploadErrors = [];
 
     try {
         $conv = null;
@@ -409,15 +430,21 @@ if ($method === 'POST') {
             }
 
             $messageId = support_chat_add_message($pdo, $conversationId, 'support', $body !== '' ? $body : '[файл]');
+            if (!empty($conv['auto_translate_support']) && $body !== '') {
+                $targetLanguage = support_chat_reply_language_for_conversation($pdo, $conv);
+                $translation = support_chat_translate_support_message($pdo, $messageId, $body, $targetLanguage);
+                if (!empty($translation['ok'])) {
+                    $body = (string)($translation['text'] ?? $body);
+                } elseif (!empty($translation['error'])) {
+                    $uploadErrors[] = 'Перевод ответа не выполнен: ' . (string)$translation['error'];
+                }
+            }
         } else {
             support_chat_rate_limit('web_message');
             $conversationId = support_chat_find_or_create_web_conversation($pdo, session_id());
             support_chat_update_web_conversation_profile($pdo, $conversationId, $data);
             $messageId = support_chat_add_message($pdo, $conversationId, 'visitor', $body !== '' ? $body : '[файл]');
         }
-
-        $storedAttachments = [];
-        $uploadErrors = [];
 
         if ($hasFiles && is_array($files)) {
             foreach ($files['name'] as $i => $name) {

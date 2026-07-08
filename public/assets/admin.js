@@ -36,6 +36,10 @@
     const balanceComment = document.getElementById('balanceComment');
     const balanceSave = document.getElementById('balanceSave');
     const balanceHistory = document.getElementById('balanceHistory');
+    const translationForm = document.getElementById('translationForm');
+    const autoTranslateSupport = document.getElementById('autoTranslateSupport');
+    const replyLanguage = document.getElementById('replyLanguage');
+    const translationSave = document.getElementById('translationSave');
     const adminTools = document.getElementById('adminTools');
     const staffForm = document.getElementById('staffForm');
     const staffLogin = document.getElementById('staffLogin');
@@ -343,6 +347,17 @@
     function messageBodyText(message) {
         const attachments = message.attachments || [];
         const body = repairText(message.body || '').trim();
+        const translated = repairText(message.translated_body || '').trim();
+        const language = repairText(message.detected_language || message.translated_to || '').trim();
+        if (message.sender === 'visitor' && translated !== '') {
+            return `<div class="translated-message"><span class="translation-badge">Переведено${language ? ' · ' + escapeHtml(language) : ''}</span><div>${displayText(translated)}</div><details><summary>Оригинал</summary><div>${displayText(body)}</div></details></div>`;
+        }
+        if (message.sender === 'support' && translated !== '') {
+            return `<div class="translated-message translated-outgoing"><span class="translation-badge">Отправлен перевод${language ? ' · ' + escapeHtml(message.translated_to || language) : ''}</span><div>${displayText(body)}</div><details><summary>Текст для пользователя</summary><div>${displayText(translated)}</div></details></div>`;
+        }
+        if (message.translation_error) {
+            return displayText(body) + `<div class="message-error-note">Ошибка перевода: ${displayText(message.translation_error)}</div>`;
+        }
         if (body !== '' && body !== '[файл]' && body !== 'Файл') return displayText(body);
         if (!attachments.length) return displayText(body || '');
         if (attachments.length === 1) {
@@ -552,6 +567,13 @@
             balanceInput.disabled = true;
             balanceComment.disabled = true;
             balanceSave.disabled = true;
+            if (autoTranslateSupport) autoTranslateSupport.disabled = true;
+            if (replyLanguage) {
+                replyLanguage.disabled = true;
+                replyLanguage.value = '';
+                replyLanguage.placeholder = 'Авто: язык клиента';
+            }
+            if (translationSave) translationSave.disabled = true;
             balanceHistory.innerHTML = '';
             return;
         }
@@ -580,6 +602,18 @@
         balanceInput.disabled = false;
         balanceComment.disabled = false;
         balanceSave.disabled = false;
+        if (autoTranslateSupport) {
+            autoTranslateSupport.checked = Boolean(item.auto_translate_support);
+            autoTranslateSupport.disabled = false;
+        }
+        if (replyLanguage) {
+            replyLanguage.value = item.reply_language || '';
+            replyLanguage.placeholder = item.visitor_language || item.browser_language
+                ? `Авто: ${item.visitor_language || item.browser_language}`
+                : 'Авто: язык клиента';
+            replyLanguage.disabled = false;
+        }
+        if (translationSave) translationSave.disabled = false;
         detailCreated.textContent = formatDate(item.created_at);
         detailUpdated.textContent = formatDate(item.updated_at);
         operatorNote.disabled = false;
@@ -659,7 +693,7 @@
     function renderMessages(items, keepScroll = false) {
         const previousHeight = messages.scrollHeight;
         const previousTop = messages.scrollTop;
-        const signature = JSON.stringify(items.map((message) => [message.id, message.sender, message.body, message.delivery_error || '', (message.attachments || []).map(a => [a.id, a.original_filename, a.mime_type].join(':')).join(','), message.is_deleted_by_visitor, message.is_deleted_for_user]));
+        const signature = JSON.stringify(items.map((message) => [message.id, message.sender, message.body, message.translated_body || '', message.detected_language || '', message.translated_to || '', message.translation_error || '', message.delivery_error || '', (message.attachments || []).map(a => [a.id, a.original_filename, a.mime_type].join(':')).join(','), message.is_deleted_by_visitor, message.is_deleted_for_user]));
         if (signature === messageSignature) {
             return;
         }
@@ -963,6 +997,35 @@
         }
         balanceSave.disabled = false;
         balanceSave.textContent = saveText;
+    });
+
+    if (translationForm) translationForm.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!selectedId) return;
+        const previousText = translationSave.textContent;
+        translationSave.disabled = true;
+        translationSave.textContent = 'Сохранение...';
+        try {
+            const data = await api('api/messages.php?admin=1', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    action: 'translation_settings',
+                    conversation_id: selectedId,
+                    enabled: autoTranslateSupport.checked,
+                    reply_language: replyLanguage.value.trim(),
+                }),
+            });
+            selectedConversation = data.conversation || selectedConversation;
+            conversations = conversations.map((item) => Number(item.id) === Number(selectedId) ? selectedConversation : item);
+            setChatState(selectedConversation);
+            renderConversations();
+        } catch (error) {
+            showError(error.message || 'Не удалось сохранить настройки перевода');
+        } finally {
+            translationSave.disabled = false;
+            translationSave.textContent = previousText;
+        }
     });
 
     if (staffForm) staffForm.addEventListener('submit', async (event) => {
