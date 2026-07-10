@@ -9,6 +9,9 @@
     const staffList = document.getElementById('staffList');
     const telegramLogList = document.getElementById('telegramLogList');
     const refreshLogs = document.getElementById('refreshLogs');
+    const prevLogs = document.getElementById('prevLogs');
+    const nextLogs = document.getElementById('nextLogs');
+    const logsPageInfo = document.getElementById('logsPageInfo');
     const themeToggle = document.getElementById('themeToggle');
     const balanceModal = document.getElementById('balanceModal');
     const balanceForm = document.getElementById('balanceForm');
@@ -21,6 +24,9 @@
     let usersOffset = 0;
     let usersHasMore = true;
     let usersLoading = false;
+    let logsOffset = 0;
+    let logsHasMore = false;
+    const logsLimit = 50;
 
     function api(path, options) {
         return fetch(path, Object.assign({ credentials: 'same-origin' }, options || {}))
@@ -53,6 +59,13 @@
         return /^-?\d+(\.\d{1,2})?$/.test(value) ? value : '';
     }
 
+    function setTheme(theme, persist) {
+        const next = theme === 'light' ? 'light' : 'dark';
+        document.documentElement.dataset.theme = next;
+        if (themeToggle) themeToggle.textContent = next === 'dark' ? 'Светлая' : 'Тёмная';
+        if (persist !== false) localStorage.setItem('support_admin_theme', next);
+    }
+
     function userName(user) {
         return user.display_name || user.visitor_name || user.visitor_handle || user.visitor_email || ('Пользователь #' + user.id);
     }
@@ -61,14 +74,8 @@
         return channel === 'telegram' ? 'Telegram' : 'Сайт';
     }
 
-    function setTheme(theme, persist) {
-        const next = theme === 'light' ? 'light' : 'dark';
-        document.documentElement.dataset.theme = next;
-        if (themeToggle) themeToggle.textContent = next === 'dark' ? 'Светлая' : 'Тёмная';
-        if (persist !== false) localStorage.setItem('support_admin_theme', next);
-    }
-
     function renderUsers(items, append) {
+        if (!usersTable) return;
         if (!append) usersTable.innerHTML = '';
         if (!items.length && !append) {
             usersTable.innerHTML = '<tr><td colspan="6"><div class="empty">Пользователи не найдены</div></td></tr>';
@@ -93,14 +100,14 @@
     }
 
     async function loadUsers(append) {
-        if (usersLoading || (!usersHasMore && append)) return;
+        if (!usersTable || !loadMoreUsers || usersLoading || (!usersHasMore && append)) return;
         usersLoading = true;
         loadMoreUsers.disabled = true;
         try {
             const params = new URLSearchParams();
             params.set('limit', '30');
             params.set('offset', String(append ? usersOffset : 0));
-            const search = userSearch.value.trim();
+            const search = userSearch ? userSearch.value.trim() : '';
             if (search) params.set('search', search);
             const data = await api('api/admin_users.php?' + params.toString());
             usersOffset = data.next_offset || 0;
@@ -116,6 +123,7 @@
     }
 
     function renderStaff(items) {
+        if (!staffList) return;
         staffList.innerHTML = (items || []).map((item) => `
             <div class="stack-item">
                 <div class="stack-item__top">
@@ -133,31 +141,91 @@
     }
 
     async function loadStaff() {
+        if (!staffList) return;
         const data = await api('api/staff.php');
         renderStaff(data.staff || []);
     }
 
-    function renderLogs(items) {
-        telegramLogList.innerHTML = (items || []).map((item) => `
-            <div class="stack-item">
-                <div class="stack-item__top">
-                    <strong>${escapeHtml(item.direction)} · ${escapeHtml(item.action)} · ${Number(item.success) ? 'ok' : 'error'}</strong>
-                    <span>${escapeHtml(formatDate(item.created_at))}</span>
-                </div>
-                <span>chat ${escapeHtml(item.telegram_chat_id || '-')} · message ${escapeHtml(item.telegram_message_id || '-')} · dialog ${escapeHtml(item.conversation_id || '-')}</span>
-                ${item.error ? `<code>${escapeHtml(item.error)}</code>` : ''}
-                ${item.result ? `<code>${escapeHtml(item.result)}</code>` : ''}
-            </div>
-        `).join('') || '<div class="empty">Лог пуст</div>';
+    function parseJsonField(value) {
+        const raw = String(value || '').trim();
+        if (raw === '' || raw === '[]' || raw === '{}') return null;
+        try {
+            const parsed = JSON.parse(raw);
+            if (Array.isArray(parsed) && parsed.length === 0) return null;
+            if (parsed && typeof parsed === 'object' && Object.keys(parsed).length === 0) return null;
+            return parsed;
+        } catch (error) {
+            return raw;
+        }
     }
 
-    async function loadLogs() {
+    function compactJson(value) {
+        const parsed = parseJsonField(value);
+        if (parsed === null) return '';
+        if (typeof parsed === 'string') return parsed;
+        return JSON.stringify(parsed, null, 2);
+    }
+
+    function payloadSummary(value) {
+        const parsed = parseJsonField(value);
+        if (parsed === null || typeof parsed === 'string') return '';
+        const parts = [];
+        const text = parsed.text || parsed.caption || parsed.message?.text || parsed.message?.caption;
+        const type = parsed.photo ? 'photo' : parsed.video ? 'video' : parsed.document ? 'document' : '';
+        const replyTo = parsed.reply_to_message_id || parsed.reply_to_message?.message_id;
+        if (text) parts.push(String(text).slice(0, 120));
+        if (type) parts.push(type);
+        if (replyTo) parts.push('reply_to ' + replyTo);
+        return parts.join(' · ');
+    }
+
+    function renderLogs(items) {
+        if (!telegramLogList) return;
+        telegramLogList.innerHTML = (items || []).map((item) => {
+            const payload = compactJson(item.payload);
+            const result = compactJson(item.result);
+            const summary = payloadSummary(item.payload) || payloadSummary(item.result);
+            const directionText = item.direction === 'incoming' ? 'incoming: входящее' : 'outgoing: исходящее';
+            return `
+                <div class="stack-item log-item log-${escapeHtml(item.direction)}">
+                    <div class="stack-item__top">
+                        <strong><span class="direction-pill">${escapeHtml(directionText)}</span> ${escapeHtml(item.action)} · ${Number(item.success) ? 'ok' : 'error'}</strong>
+                        <span>${escapeHtml(formatDate(item.created_at))}</span>
+                    </div>
+                    <span>chat ${escapeHtml(item.telegram_chat_id || '-')} · message ${escapeHtml(item.telegram_message_id || '-')} · dialog ${escapeHtml(item.conversation_id || '-')}</span>
+                    ${summary ? `<p class="log-summary">${escapeHtml(summary)}</p>` : ''}
+                    ${item.error ? `<code>${escapeHtml(item.error)}</code>` : ''}
+                    ${payload ? `<details><summary>payload</summary><code>${escapeHtml(payload)}</code></details>` : ''}
+                    ${result ? `<details><summary>result</summary><code>${escapeHtml(result)}</code></details>` : ''}
+                </div>
+            `;
+        }).join('') || '<div class="empty">Лог пуст</div>';
+    }
+
+    function updateLogsPager() {
+        if (logsPageInfo) {
+            const page = Math.floor(logsOffset / logsLimit) + 1;
+            logsPageInfo.textContent = `Страница ${page} · по ${logsLimit} записей`;
+        }
+        if (prevLogs) prevLogs.disabled = logsOffset <= 0;
+        if (nextLogs) nextLogs.disabled = !logsHasMore;
+    }
+
+    async function loadLogs(offset) {
+        if (!telegramLogList) return;
+        logsOffset = Math.max(0, Number(offset || 0));
         telegramLogList.innerHTML = '<div class="empty">Загрузка...</div>';
-        const data = await api('api/telegram_logs.php?limit=100');
+        updateLogsPager();
+        const params = new URLSearchParams({ limit: String(logsLimit), offset: String(logsOffset) });
+        const data = await api('api/telegram_logs.php?' + params.toString());
+        logsHasMore = Boolean(data.has_more);
+        logsOffset = Number(data.offset || logsOffset);
         renderLogs(data.logs || []);
+        updateLogsPager();
     }
 
     function openBalanceModal(id, name, value) {
+        if (!balanceModal) return;
         balanceConversationId.value = id;
         balanceValue.value = Number(value || 0).toFixed(2);
         balanceComment.value = '';
@@ -169,101 +237,115 @@
     }
 
     function closeBalanceModal() {
-        balanceModal.hidden = true;
+        if (balanceModal) balanceModal.hidden = true;
     }
 
-    userSearch.addEventListener('input', () => {
-        window.clearTimeout(userSearch._timer);
-        userSearch._timer = window.setTimeout(() => {
-            usersOffset = 0;
-            usersHasMore = true;
-            loadUsers(false);
-        }, 250);
-    });
+    if (userSearch) {
+        userSearch.addEventListener('input', () => {
+            window.clearTimeout(userSearch._timer);
+            userSearch._timer = window.setTimeout(() => {
+                usersOffset = 0;
+                usersHasMore = true;
+                loadUsers(false);
+            }, 250);
+        });
+    }
 
-    loadMoreUsers.addEventListener('click', () => loadUsers(true));
+    if (loadMoreUsers) loadMoreUsers.addEventListener('click', () => loadUsers(true));
 
-    usersTable.addEventListener('click', (event) => {
-        const button = event.target.closest('[data-balance-id]');
-        if (!button) return;
-        openBalanceModal(button.dataset.balanceId, button.dataset.balanceName, button.dataset.balanceValue);
-    });
+    if (usersTable) {
+        usersTable.addEventListener('click', (event) => {
+            const button = event.target.closest('[data-balance-id]');
+            if (!button) return;
+            openBalanceModal(button.dataset.balanceId, button.dataset.balanceName, button.dataset.balanceValue);
+        });
+    }
 
     document.querySelectorAll('[data-close-modal]').forEach((item) => item.addEventListener('click', closeBalanceModal));
 
-    balanceForm.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        balanceStatus.textContent = 'Сохранение...';
-        balanceStatus.classList.remove('error');
-        const normalizedBalance = normalizeMoneyInput(balanceValue.value);
-        if (!normalizedBalance) {
-            balanceStatus.textContent = 'Введите корректный баланс, например 902.00';
-            balanceStatus.classList.add('error');
-            return;
-        }
-        try {
-            await api('api/balance.php', {
+    if (balanceForm) {
+        balanceForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            balanceStatus.textContent = 'Сохранение...';
+            balanceStatus.classList.remove('error');
+            const normalizedBalance = normalizeMoneyInput(balanceValue.value);
+            if (!normalizedBalance) {
+                balanceStatus.textContent = 'Введите корректный баланс, например 902.00';
+                balanceStatus.classList.add('error');
+                return;
+            }
+            try {
+                await api('api/balance.php', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        conversation_id: Number(balanceConversationId.value),
+                        balance: normalizedBalance,
+                        comment: balanceComment.value.trim(),
+                    }),
+                });
+                balanceStatus.textContent = 'Баланс сохранён';
+                usersOffset = 0;
+                usersHasMore = true;
+                await loadUsers(false);
+                window.setTimeout(closeBalanceModal, 500);
+            } catch (error) {
+                balanceStatus.textContent = error.message || 'Не удалось сохранить баланс';
+                balanceStatus.classList.add('error');
+            }
+        });
+    }
+
+    if (staffForm) {
+        staffForm.addEventListener('submit', async (event) => {
+            event.preventDefault();
+            await api('api/staff.php', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    conversation_id: Number(balanceConversationId.value),
-                    balance: normalizedBalance,
-                    comment: balanceComment.value.trim(),
+                    action: 'create',
+                    login: staffLogin.value.trim(),
+                    password: staffPassword.value,
+                    role: staffRole.value,
                 }),
             });
-            balanceStatus.textContent = 'Баланс сохранён';
-            usersOffset = 0;
-            usersHasMore = true;
-            await loadUsers(false);
-            window.setTimeout(closeBalanceModal, 500);
-        } catch (error) {
-            balanceStatus.textContent = error.message || 'Не удалось сохранить баланс';
-            balanceStatus.classList.add('error');
-        }
-    });
-
-    staffForm.addEventListener('submit', async (event) => {
-        event.preventDefault();
-        await api('api/staff.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                action: 'create',
-                login: staffLogin.value.trim(),
-                password: staffPassword.value,
-                role: staffRole.value,
-            }),
+            staffLogin.value = '';
+            staffPassword.value = '';
+            await loadStaff();
         });
-        staffLogin.value = '';
-        staffPassword.value = '';
-        await loadStaff();
-    });
+    }
 
-    staffList.addEventListener('click', async (event) => {
-        const button = event.target.closest('[data-staff-action]');
-        if (!button) return;
-        const payload = { action: button.dataset.staffAction, id: Number(button.dataset.staffId) };
-        if (payload.action === 'password') {
-            const password = window.prompt('Новый пароль менеджера');
-            if (!password) return;
-            payload.password = password;
-        }
-        await api('api/staff.php', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
+    if (staffList) {
+        staffList.addEventListener('click', async (event) => {
+            const button = event.target.closest('[data-staff-action]');
+            if (!button) return;
+            const payload = { action: button.dataset.staffAction, id: Number(button.dataset.staffId) };
+            if (payload.action === 'password') {
+                const password = window.prompt('Новый пароль менеджера');
+                if (!password) return;
+                payload.password = password;
+            }
+            await api('api/staff.php', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            await loadStaff();
         });
-        await loadStaff();
-    });
+    }
 
-    refreshLogs.addEventListener('click', loadLogs);
+    if (refreshLogs) refreshLogs.addEventListener('click', () => loadLogs(logsOffset));
+    if (prevLogs) prevLogs.addEventListener('click', () => loadLogs(Math.max(0, logsOffset - logsLimit)));
+    if (nextLogs) nextLogs.addEventListener('click', () => loadLogs(logsOffset + logsLimit));
 
-    themeToggle.addEventListener('click', () => {
-        setTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light', true);
-    });
+    if (themeToggle) {
+        themeToggle.addEventListener('click', () => {
+            setTheme(document.documentElement.dataset.theme === 'light' ? 'dark' : 'light', true);
+        });
+    }
 
     setTheme(document.documentElement.dataset.theme || 'dark', false);
     loadUsers(false);
     loadStaff();
-    loadLogs();
+    loadLogs(0);
 }());

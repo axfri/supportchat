@@ -274,83 +274,88 @@ function support_chat_delete_admin_message_from_telegram(PDO $pdo, int $messageI
 }
 
 if ($method === 'GET') {
-    if ($isAdmin) {
-        $conversationId = (int)($_GET['conversation_id'] ?? 0);
-    } else {
-        $conversationId = support_chat_find_web_conversation($pdo, session_id()) ?? 0;
-    }
-
-    if ($conversationId <= 0) {
-        if ($isAdmin) {
-            support_chat_json(['ok' => false, 'error' => 'Conversation is required'], 422);
-        }
-        support_chat_json([
-            'ok' => true,
-            'conversation_id' => null,
-            'conversation' => null,
-            'messages' => [],
-        ]);
-    }
-
-    $limit = max(1, min(80, (int)($_GET['limit'] ?? 30)));
-    $beforeId = (int)($_GET['before_id'] ?? 0);
-    $afterId = (int)($_GET['after_id'] ?? 0);
-    $params = [$conversationId];
-    $where = 'conversation_id = ?';
-    if ($beforeId > 0) {
-        $where .= ' AND id < ?';
-        $params[] = $beforeId;
-    } elseif ($afterId > 0) {
-        $where .= ' AND id > ?';
-        $params[] = $afterId;
-    }
-    $params[] = $limit + 1;
-    $stmt = $pdo->prepare("SELECT * FROM messages WHERE {$where} ORDER BY id DESC LIMIT ?");
-    $stmt->execute($params);
-    $messages = array_reverse($stmt->fetchAll());
-    $hasMoreBefore = count($messages) > $limit;
-    if ($hasMoreBefore) {
-        array_shift($messages);
-    }
-
-    foreach ($messages as &$message) {
-        $message['attachments'] = support_chat_get_attachments($pdo, (int)$message['id']);
-        $message['is_deleted_by_visitor'] = false;
-        $message['is_deleted_for_user'] = (bool)($message['is_deleted_for_user'] ?? 0);
-
-        if (!$isAdmin && $message['is_deleted_for_user']) {
-            $message = null;
-        }
-    }
-    unset($message);
-
-    if (!$isAdmin) {
-        $messages = array_values(array_filter($messages, static fn($message) => $message !== null));
-    }
-
     try {
         if ($isAdmin) {
-            $pdo->prepare('UPDATE conversations SET unread_support = 0 WHERE id = ?')->execute([$conversationId]);
+            $conversationId = (int)($_GET['conversation_id'] ?? 0);
         } else {
-            $pdo->prepare('UPDATE conversations SET unread_visitor = 0 WHERE id = ?')->execute([$conversationId]);
+            $conversationId = support_chat_find_web_conversation($pdo, session_id()) ?? 0;
         }
+
+        if ($conversationId <= 0) {
+            if ($isAdmin) {
+                support_chat_json(['ok' => false, 'error' => 'Conversation is required'], 422);
+            }
+            support_chat_json([
+                'ok' => true,
+                'conversation_id' => null,
+                'conversation' => null,
+                'messages' => [],
+            ]);
+        }
+
+        $limit = max(1, min(80, (int)($_GET['limit'] ?? 30)));
+        $beforeId = (int)($_GET['before_id'] ?? 0);
+        $afterId = (int)($_GET['after_id'] ?? 0);
+        $params = [$conversationId];
+        $where = 'conversation_id = ?';
+        if ($beforeId > 0) {
+            $where .= ' AND id < ?';
+            $params[] = $beforeId;
+        } elseif ($afterId > 0) {
+            $where .= ' AND id > ?';
+            $params[] = $afterId;
+        }
+        $params[] = $limit + 1;
+        $stmt = $pdo->prepare("SELECT * FROM messages WHERE {$where} ORDER BY id DESC LIMIT ?");
+        $stmt->execute($params);
+        $messages = array_reverse($stmt->fetchAll());
+        $hasMoreBefore = count($messages) > $limit;
+        if ($hasMoreBefore) {
+            array_shift($messages);
+        }
+
+        foreach ($messages as &$message) {
+            $message['attachments'] = support_chat_get_attachments($pdo, (int)$message['id']);
+            $message['is_deleted_by_visitor'] = false;
+            $message['is_deleted_for_user'] = (bool)($message['is_deleted_for_user'] ?? 0);
+
+            if (!$isAdmin && $message['is_deleted_for_user']) {
+                $message = null;
+            }
+        }
+        unset($message);
+
+        if (!$isAdmin) {
+            $messages = array_values(array_filter($messages, static fn($message) => $message !== null));
+        }
+
+        try {
+            if ($isAdmin) {
+                $pdo->prepare('UPDATE conversations SET unread_support = 0 WHERE id = ?')->execute([$conversationId]);
+            } else {
+                $pdo->prepare('UPDATE conversations SET unread_visitor = 0 WHERE id = ?')->execute([$conversationId]);
+            }
+        } catch (Throwable $e) {
+            support_chat_log_error('Failed to update unread flags: ' . $e->getMessage());
+        }
+
+        $conversation = support_chat_get_conversation($pdo, $conversationId);
+        if ($isAdmin && is_array($conversation)) {
+            $conversation = support_chat_admin_conversation_payload($conversation);
+        }
+
+        support_chat_json([
+            'ok' => true,
+            'conversation_id' => $conversationId,
+            'conversation' => $conversation,
+            'messages' => $messages,
+            'has_more_before' => $hasMoreBefore,
+            'limit' => $limit,
+        ]);
     } catch (Throwable $e) {
-        support_chat_log_error('Failed to update unread flags: ' . $e->getMessage());
+        support_chat_log_error('messages.php GET error: ' . $e->getMessage());
+        support_chat_json(['ok' => false, 'error' => 'Internal server error'], 500);
     }
-
-    $conversation = support_chat_get_conversation($pdo, $conversationId);
-    if ($isAdmin && is_array($conversation)) {
-        $conversation = support_chat_admin_conversation_payload($conversation);
-    }
-
-    support_chat_json([
-        'ok' => true,
-        'conversation_id' => $conversationId,
-        'conversation' => $conversation,
-        'messages' => $messages,
-        'has_more_before' => $hasMoreBefore,
-        'limit' => $limit,
-    ]);
 }
 
 if ($method === 'DELETE' || ($method === 'POST' && (($data['action'] ?? '') === 'delete_for_user'))) {

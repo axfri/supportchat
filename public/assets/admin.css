@@ -437,6 +437,16 @@ textarea:focus-visible {
     object-fit: cover;
 }
 
+.telegram-handle {
+    color: #69a8ff;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.telegram-handle:hover {
+    text-decoration: underline;
+}
+
 .conversation-main {
     min-width: 0;
     display: grid;

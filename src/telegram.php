@@ -94,6 +94,9 @@ function support_chat_telegram_send_attachment(string $chatId, string $path, str
     } elseif (strpos($mimeType, 'video/') === 0) {
         $field = 'video';
         $method = 'sendVideo';
+    } elseif (strpos($mimeType, 'audio/') === 0) {
+        $field = 'audio';
+        $method = 'sendAudio';
     }
 
     $payload = [
@@ -105,8 +108,19 @@ function support_chat_telegram_send_attachment(string $chatId, string $path, str
         $payload['caption'] = function_exists('mb_substr') ? mb_substr($caption, 0, 1024) : substr($caption, 0, 1024);
     }
 
-    return support_chat_telegram_request($method, $payload, [
+    $response = support_chat_telegram_request($method, $payload, [
         $field => [
+            'path' => $path,
+            'mime' => $mimeType,
+            'name' => $name,
+        ],
+    ]);
+    if (!empty($response['ok']) || $method === 'sendDocument') {
+        return $response;
+    }
+
+    return support_chat_telegram_request('sendDocument', $payload, [
+        'document' => [
             'path' => $path,
             'mime' => $mimeType,
             'name' => $name,
@@ -157,7 +171,39 @@ function support_chat_telegram_download_file(string $fileId, string $targetPath)
     $url = 'https://api.telegram.org/file/bot' . $token . '/' . ltrim((string)$file['result']['file_path'], '/');
     $in = @fopen($url, 'rb');
     if (!is_resource($in)) {
-        return ['ok' => false, 'description' => 'Telegram file download failed'];
+        if (!function_exists('curl_init')) {
+            return ['ok' => false, 'description' => 'Telegram file download failed'];
+        }
+
+        $out = @fopen($targetPath, 'wb');
+        if (!is_resource($out)) {
+            return ['ok' => false, 'description' => 'Could not create local file'];
+        }
+
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_FILE => $out,
+            CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_TIMEOUT => 120,
+        ]);
+        $ok = curl_exec($ch);
+        $error = curl_error($ch);
+        $httpStatus = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        fclose($out);
+
+        if (!$ok || $httpStatus >= 400) {
+            @unlink($targetPath);
+            return ['ok' => false, 'description' => $error !== '' ? $error : 'Telegram file download failed', 'http_status' => $httpStatus];
+        }
+
+        if (!is_file($targetPath) || filesize($targetPath) < 1) {
+            @unlink($targetPath);
+            return ['ok' => false, 'description' => 'Downloaded Telegram file is empty'];
+        }
+
+        return ['ok' => true, 'path' => $targetPath, 'telegram_file' => $file['result']];
     }
 
     $out = @fopen($targetPath, 'wb');

@@ -51,7 +51,7 @@ try {
 
     $mimeType = (string)$attachment['mime_type'];
     $fileSize = filesize($filePath) ?: (int)$attachment['file_size'];
-    $isMedia = strpos($mimeType, 'video/') === 0 || strpos($mimeType, 'image/') === 0;
+    $isMedia = strpos($mimeType, 'video/') === 0 || strpos($mimeType, 'image/') === 0 || strpos($mimeType, 'audio/') === 0;
     $inline = (isset($_GET['inline']) && $_GET['inline'] === '1') || $isMedia;
     $filename = str_replace(['"', "\r", "\n"], '', (string)$attachment['original_filename']);
 

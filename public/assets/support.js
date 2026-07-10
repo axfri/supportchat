@@ -308,6 +308,8 @@
         download.download = name || 'file';
         if (type === 'video') {
             body.innerHTML = `<video controls autoplay src="${url}"></video>`;
+        } else if (type === 'audio') {
+            body.innerHTML = `<audio controls autoplay src="${url}"></audio>`;
         } else {
             body.innerHTML = `<img src="${url}" alt="${escapeHtml(name || 'file')}">`;
         }
@@ -361,8 +363,10 @@
 
         return '<div class="attachments">' + attachments.map((att) => {
             const ext = String(att.original_filename || '').split('.').pop().toLowerCase();
-            const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext);
-            const isVideo = ['mp4', 'webm', 'mov', 'mkv', 'avi'].includes(ext);
+            const mime = String(att.mime_type || '');
+            const isImage = mime.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext);
+            const isVideo = mime.startsWith('video/') || ['mp4', 'webm', 'mov', 'mkv', 'avi'].includes(ext);
+            const isAudio = mime.startsWith('audio/') || ['mp3', 'ogg', 'oga', 'wav', 'webm', 'm4a', 'aac', 'flac'].includes(ext);
 
             if (isImage) {
                 return `<button type="button" data-preview-url="api/download.php?id=${att.id}&inline=1" data-preview-type="image" data-preview-name="${escapeHtml(att.original_filename)}" class="attachment-image" title="${escapeHtml(att.original_filename)}">
@@ -370,6 +374,8 @@
                 </button>`;
             } else if (isVideo) {
                 return `<button type="button" data-preview-url="api/download.php?id=${att.id}&inline=1" data-preview-type="video" data-preview-name="${escapeHtml(att.original_filename)}" class="attachment-video-button" title="${escapeHtml(att.original_filename)}">▶ ${escapeHtml(att.original_filename)}</button>`;
+            } else if (isAudio) {
+                return `<button type="button" data-preview-url="api/download.php?id=${att.id}&inline=1" data-preview-type="audio" data-preview-name="${escapeHtml(att.original_filename)}" class="attachment-video-button" title="${escapeHtml(att.original_filename)}">♪ ${escapeHtml(att.original_filename)}</button>`;
             } else {
                 return `<a href="api/download.php?id=${att.id}" class="attachment-file" download="${escapeHtml(att.original_filename)}" title="${escapeHtml(att.original_filename)}">
                     📎 ${escapeHtml(att.original_filename)} (${formatFileSize(att.file_size)})

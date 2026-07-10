@@ -89,7 +89,7 @@ $supportUser = [
             <div class="messages" id="messages"></div>
 
             <form class="composer" id="composer">
-                <input type="file" id="fileInput" multiple accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.mp4,.webm,.mov,.mkv,.avi,.zip,.rar,.7z,.tar,.gz,.tgz" hidden>
+                <input type="file" id="fileInput" multiple hidden>
                 <button type="button" id="attachButton" class="icon-button attach-button" title="Добавить файл" aria-label="Добавить файл">
                     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                         <path d="M7.2 13.1 13.8 6.5a3.3 3.3 0 0 1 4.7 4.7l-8.2 8.2a5.1 5.1 0 0 1-7.2-7.2l8.5-8.5"></path>

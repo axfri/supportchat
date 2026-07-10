@@ -330,9 +330,7 @@ function support_chat_store_telegram_avatar(PDO $pdo, int $conversationId, strin
         return;
     }
 
-    if (!function_exists('support_chat_telegram_get_user_profile_photos')) {
-        require_once __DIR__ . '/telegram.php';
-    }
+    require_once __DIR__ . '/telegram.php';
 
     try {
         $response = support_chat_telegram_get_user_profile_photos($telegramUserId, 1);
@@ -560,6 +558,13 @@ function support_chat_telegram_profile(array $message): ?array
 function support_chat_log_telegram(PDO $pdo, string $direction, string $action, array $context = []): void
 {
     try {
+        $payload = array_key_exists('payload', $context)
+            ? json_encode($context['payload'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+            : '';
+        $result = array_key_exists('result', $context)
+            ? json_encode($context['result'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+            : '';
+
         $stmt = $pdo->prepare('
             INSERT INTO telegram_logs
                 (direction, action, telegram_chat_id, telegram_message_id, conversation_id, payload, result, success, error)
@@ -571,8 +576,8 @@ function support_chat_log_telegram(PDO $pdo, string $direction, string $action, 
             (string)($context['chat_id'] ?? ''),
             (string)($context['message_id'] ?? ''),
             isset($context['conversation_id']) ? (int)$context['conversation_id'] : null,
-            json_encode($context['payload'] ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-            json_encode($context['result'] ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
+            is_string($payload) ? $payload : '',
+            is_string($result) ? $result : '',
             !empty($context['success']) ? 1 : 0,
             (string)($context['error'] ?? ''),
         ]);
@@ -707,31 +712,58 @@ function support_chat_ingest_telegram_message(PDO $pdo, array $message): ?int
 function support_chat_telegram_attachment_candidates(array $message): array
 {
     $items = [];
+    $messageId = (string)($message['message_id'] ?? time());
 
     if (!empty($message['photo']) && is_array($message['photo'])) {
         $photo = end($message['photo']);
         if (is_array($photo) && !empty($photo['file_id'])) {
             $items[] = [
                 'file_id' => (string)$photo['file_id'],
-                'name' => 'telegram-photo-' . (string)($message['message_id'] ?? time()) . '.jpg',
+                'name' => 'telegram-photo-' . $messageId . '.jpg',
                 'mime' => 'image/jpeg',
             ];
         }
     }
 
-    if (!empty($message['video']) && is_array($message['video']) && !empty($message['video']['file_id'])) {
-        $items[] = [
-            'file_id' => (string)$message['video']['file_id'],
-            'name' => (string)($message['video']['file_name'] ?? ('telegram-video-' . (string)($message['message_id'] ?? time()) . '.mp4')),
-            'mime' => (string)($message['video']['mime_type'] ?? 'video/mp4'),
-        ];
-    }
+    $types = [
+        'video' => ['prefix' => 'telegram-video-', 'ext' => 'mp4', 'mime' => 'video/mp4'],
+        'document' => ['prefix' => 'telegram-file-', 'ext' => 'bin', 'mime' => 'application/octet-stream'],
+        'audio' => ['prefix' => 'telegram-audio-', 'ext' => 'mp3', 'mime' => 'audio/mpeg'],
+        'voice' => ['prefix' => 'telegram-voice-', 'ext' => 'ogg', 'mime' => 'audio/ogg'],
+        'video_note' => ['prefix' => 'telegram-video-note-', 'ext' => 'mp4', 'mime' => 'video/mp4'],
+        'animation' => ['prefix' => 'telegram-animation-', 'ext' => 'mp4', 'mime' => 'video/mp4'],
+        'sticker' => ['prefix' => 'telegram-sticker-', 'ext' => 'webp', 'mime' => 'image/webp'],
+    ];
 
-    if (!empty($message['document']) && is_array($message['document']) && !empty($message['document']['file_id'])) {
+    foreach ($types as $key => $defaults) {
+        if (empty($message[$key]) || !is_array($message[$key]) || empty($message[$key]['file_id'])) {
+            continue;
+        }
+
+        $item = $message[$key];
+        $mime = (string)($item['mime_type'] ?? $defaults['mime']);
+        if ($key === 'sticker') {
+            if (!empty($item['is_video'])) {
+                $mime = 'video/webm';
+                $defaults['ext'] = 'webm';
+            } elseif (!empty($item['is_animated'])) {
+                $mime = 'application/x-tgsticker';
+                $defaults['ext'] = 'tgs';
+            }
+        }
+        $name = (string)($item['file_name'] ?? '');
+        if ($name === '') {
+            $ext = support_chat_extension_from_mime($mime);
+            if ($ext === 'bin') {
+                $ext = $defaults['ext'];
+            }
+            $name = $defaults['prefix'] . $messageId . '.' . $ext;
+        }
+
         $items[] = [
-            'file_id' => (string)$message['document']['file_id'],
-            'name' => (string)($message['document']['file_name'] ?? ('telegram-file-' . (string)($message['message_id'] ?? time()))),
-            'mime' => (string)($message['document']['mime_type'] ?? 'application/octet-stream'),
+            'file_id' => (string)$item['file_id'],
+            'name' => $name,
+            'mime' => $mime,
         ];
     }
 
@@ -740,6 +772,8 @@ function support_chat_telegram_attachment_candidates(array $message): array
 
 function support_chat_store_telegram_attachments(PDO $pdo, int $messageId, array $message): void
 {
+    require_once __DIR__ . '/telegram.php';
+
     $items = support_chat_telegram_attachment_candidates($message);
     if (count($items) === 0) {
         return;
@@ -833,13 +867,26 @@ function support_chat_extension_from_mime(string $mimeType): string
         'application/x-tar' => 'tar',
         'application/gzip' => 'gz',
         'application/x-gzip' => 'gz',
+        'audio/mpeg' => 'mp3',
+        'audio/mp3' => 'mp3',
+        'audio/ogg' => 'ogg',
+        'audio/oga' => 'oga',
+        'audio/wav' => 'wav',
+        'audio/x-wav' => 'wav',
+        'audio/webm' => 'webm',
+        'audio/mp4' => 'm4a',
+        'video/x-matroska' => 'mkv',
+        'video/x-msvideo' => 'avi',
+        'application/pdf' => 'pdf',
+        'text/plain' => 'txt',
+        'application/json' => 'json',
+        'application/x-tgsticker' => 'tgs',
     ];
     return $map[$mimeType] ?? 'bin';
 }
 
 function support_chat_validate_file(string $filename, string $mimeType, int $fileSize): array
 {
-    $allowed = support_chat_allowed_file_types();
     $maxSize = 100 * 1024 * 1024;
 
     if ($fileSize > $maxSize) {
@@ -848,38 +895,6 @@ function support_chat_validate_file(string $filename, string $mimeType, int $fil
 
     if ($fileSize < 1) {
         return ['valid' => false, 'error' => 'Файл не должен быть пустым'];
-    }
-
-    $ext = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
-    if (!isset($allowed[$ext])) {
-        return ['valid' => false, 'error' => 'Формат файла не поддерживается'];
-    }
-
-    $mimeType = strtolower(trim($mimeType));
-    $expected = $allowed[$ext];
-    $aliases = [
-        'jpg' => ['image/jpeg', 'image/pjpeg'],
-        'jpeg' => ['image/jpeg', 'image/pjpeg'],
-        'png' => ['image/png', 'image/x-png'],
-        'gif' => ['image/gif'],
-        'webp' => ['image/webp'],
-        'bmp' => ['image/bmp', 'image/x-ms-bmp'],
-        'mp4' => ['video/mp4', 'application/mp4', 'application/octet-stream'],
-        'webm' => ['video/webm', 'application/octet-stream'],
-        'mov' => ['video/quicktime', 'video/mp4', 'application/octet-stream'],
-        'mkv' => ['video/x-matroska', 'application/octet-stream'],
-        'avi' => ['video/x-msvideo', 'application/octet-stream'],
-        'zip' => ['application/zip', 'application/x-zip-compressed', 'application/octet-stream'],
-        'rar' => ['application/x-rar-compressed', 'application/vnd.rar', 'application/octet-stream'],
-        '7z' => ['application/x-7z-compressed', 'application/octet-stream'],
-        'tar' => ['application/x-tar', 'application/octet-stream'],
-        'gz' => ['application/gzip', 'application/x-gzip', 'application/octet-stream'],
-        'tgz' => ['application/gzip', 'application/x-gzip', 'application/octet-stream'],
-    ];
-
-    $validMimes = $aliases[$ext] ?? [$expected];
-    if ($mimeType !== '' && !in_array($mimeType, $validMimes, true)) {
-        return ['valid' => false, 'error' => 'Тип файла не соответствует расширению'];
     }
 
     return ['valid' => true];

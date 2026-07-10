@@ -89,7 +89,16 @@
         const headers = Object.assign({}, options && options.headers ? options.headers : {});
 
         return fetch(path, Object.assign({}, options || {}, { headers, credentials: 'same-origin' }))
-            .then((response) => response.json().then((data) => {
+            .then((response) => response.text().then((raw) => {
+                let data = null;
+                try {
+                    data = raw ? JSON.parse(raw) : null;
+                } catch (error) {
+                    throw new Error('Ошибка API: сервер вернул не JSON' + (response.status ? ' (HTTP ' + response.status + ')' : ''));
+                }
+                if (!data || typeof data !== 'object') {
+                    throw new Error('Ошибка API: пустой ответ сервера' + (response.status ? ' (HTTP ' + response.status + ')' : ''));
+                }
                 if (!response.ok || !data.ok) {
                     throw new Error(data.error || 'Ошибка запроса');
                 }
@@ -209,6 +218,14 @@
         return repairText((item && (item.language_label || item.visitor_language || item.browser_language)) || '');
     }
 
+    function telegramHandleLink(item) {
+        const handle = String((item && item.visitor_handle) || '').trim();
+        if (!handle || handle.charAt(0) !== '@') return '';
+        const username = handle.slice(1).replace(/[^a-zA-Z0-9_]/g, '');
+        if (!username) return '';
+        return `<a class="telegram-handle" href="https://t.me/${escapeHtml(username)}" target="_blank" rel="noopener noreferrer">${escapeHtml(handle)}</a>`;
+    }
+
     function currentQuery() {
         const params = new URLSearchParams();
         params.set('limit', '30');
@@ -286,7 +303,9 @@
         download.download = name || 'file';
         body.innerHTML = type === 'video'
             ? `<video controls autoplay src="${url}"></video>`
-            : `<img src="${url}" alt="${escapeHtml(name || 'file')}">`;
+            : type === 'audio'
+                ? `<audio controls autoplay src="${url}"></audio>`
+                : `<img src="${url}" alt="${escapeHtml(name || 'file')}">`;
         modal.hidden = false;
     }
 
@@ -374,8 +393,10 @@
 
         return '<div class="attachments">' + attachments.map((att) => {
             const ext = att.original_filename.split('.').pop().toLowerCase();
-            const isImage = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext);
-            const isVideo = ['mp4', 'webm', 'mov', 'mkv', 'avi'].includes(ext);
+            const mime = String(att.mime_type || '');
+            const isImage = mime.startsWith('image/') || ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(ext);
+            const isVideo = mime.startsWith('video/') || ['mp4', 'webm', 'mov', 'mkv', 'avi'].includes(ext);
+            const isAudio = mime.startsWith('audio/') || ['mp3', 'ogg', 'oga', 'wav', 'webm', 'm4a', 'aac', 'flac'].includes(ext);
             const inlineUrl = adminDownloadUrl(att, true);
             const downloadUrl = adminDownloadUrl(att, false);
 
@@ -397,6 +418,11 @@
                     </div>`;
                 }
                 return `<button type="button" data-preview-url="${inlineUrl}" data-preview-type="video" data-preview-name="${displayText(att.original_filename)}" class="attachment-video-button" title="${displayText(att.original_filename)}">▶ ${displayText(att.original_filename)}</button>`;
+            } else if (isAudio) {
+                if (disableLinks) {
+                    return `<div class="attachment-file-disabled" title="${displayText(att.original_filename)}">♪ ${displayText(att.original_filename)} (${formatFileSize(att.file_size)})</div>`;
+                }
+                return `<button type="button" data-preview-url="${inlineUrl}" data-preview-type="audio" data-preview-name="${displayText(att.original_filename)}" class="attachment-video-button" title="${displayText(att.original_filename)}">♪ ${displayText(att.original_filename)}</button>`;
             } else {
                 if (disableLinks) {
                     return `<div class="attachment-file-disabled" title="${displayText(att.original_filename)}">📎 ${displayText(att.original_filename)} (${formatFileSize(att.file_size)})</div>`;
@@ -593,7 +619,9 @@
 
         applyAvatar(clientAvatar, item);
         clientName.textContent = title;
-        clientHandle.textContent = [dialogLabel(item), languageLabel(item) ? 'Язык: ' + languageLabel(item) : ''].filter(Boolean).join(' · ');
+        const details = [dialogLabel(item), languageLabel(item) ? 'Язык: ' + languageLabel(item) : ''].filter(Boolean).map((value) => displayText(value));
+        const handleLink = telegramHandleLink(item);
+        clientHandle.innerHTML = [handleLink, ...details].filter(Boolean).join(' · ');
         detailChannel.textContent = channelText(item.channel);
         detailStatus.textContent = statusText(item.status);
         detailBalance.textContent = Number(item.balance || 0).toFixed(2);

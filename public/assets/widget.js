@@ -27,7 +27,7 @@
             </header>
             <div class="fscw-messages"></div>
             <form class="fscw-composer">
-                <input class="fscw-file-input" type="file" multiple accept=".jpg,.jpeg,.png,.gif,.webp,.bmp,.mp4,.webm,.mov,.mkv,.avi,.zip,.rar,.7z,.tar,.gz,.tgz" hidden>
+                <input class="fscw-file-input" type="file" multiple hidden>
                 <button class="fscw-attach" type="button" title="Добавить файл" aria-label="Добавить файл">
                     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
                         <path d="M7.2 13.1 13.8 6.5a3.3 3.3 0 0 1 4.7 4.7l-8.2 8.2a5.1 5.1 0 0 1-7.2-7.2l8.5-8.5"></path>
@@ -163,7 +163,9 @@
         modal.querySelector('.fscw-file-modal__download').download = name || 'file';
         modal.querySelector('.fscw-file-modal__body').innerHTML = type === 'video'
             ? '<video controls autoplay src="' + url + '"></video>'
-            : '<img src="' + url + '" alt="' + escapeHtml(name || 'file') + '">';
+            : type === 'audio'
+                ? '<audio controls autoplay src="' + url + '"></audio>'
+                : '<img src="' + url + '" alt="' + escapeHtml(name || 'file') + '">';
         modal.hidden = false;
     }
 
@@ -208,6 +210,9 @@
             }
             if (type.startsWith('video/')) {
                 return '<button type="button" class="fscw-attachment-video-button" data-preview-url="' + inlineUrl + '" data-preview-type="video" data-preview-name="' + name + '">▶ ' + name + '</button>';
+            }
+            if (type.startsWith('audio/')) {
+                return '<button type="button" class="fscw-attachment-video-button" data-preview-url="' + inlineUrl + '" data-preview-type="audio" data-preview-name="' + name + '">♪ ' + name + '</button>';
             }
             return '<a class="fscw-attachment-file" href="' + url + '" download="' + name + '" title="' + name + '">\uD83D\uDCCE ' + name + '</a>';
         }).join('') + '</div>';

@@ -198,6 +198,14 @@ td small {
     padding: 22px;
 }
 
+.admin-page-card {
+    margin-top: 16px;
+}
+
+.admin-narrow-card {
+    width: min(760px, 100%);
+}
+
 .users-card,
 .logs-card {
     grid-column: 1 / -1;
@@ -342,8 +350,7 @@ tr:last-child td {
 }
 
 .log-list {
-    max-height: 520px;
-    overflow: auto;
+    overflow: visible;
 }
 
 .log-list code {
@@ -352,6 +359,75 @@ tr:last-child td {
     overflow: auto;
     color: var(--muted);
     white-space: pre-wrap;
+}
+
+.log-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+    color: var(--muted);
+    font-weight: 850;
+}
+
+.pager {
+    display: flex;
+    gap: 8px;
+}
+
+.secondary-btn:disabled {
+    cursor: default;
+    opacity: .5;
+}
+
+.page-more-btn {
+    margin-top: 14px;
+}
+
+.log-item {
+    border-left: 4px solid var(--line);
+}
+
+.log-incoming {
+    border-left-color: #20c997;
+}
+
+.log-outgoing {
+    border-left-color: #72adff;
+}
+
+.direction-pill {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    margin-right: 8px;
+    padding: 0 8px;
+    border-radius: 999px;
+    background: rgba(32, 201, 151, .14);
+    color: #65e0ba;
+    font-size: 12px;
+}
+
+.log-outgoing .direction-pill {
+    background: rgba(8, 119, 255, .16);
+    color: #8fc2ff;
+}
+
+.log-summary {
+    margin: 0;
+    color: var(--text);
+    font-weight: 800;
+    line-height: 1.45;
+}
+
+.log-item details {
+    color: var(--muted);
+}
+
+.log-item summary {
+    cursor: pointer;
+    font-weight: 900;
 }
 
 .empty {
