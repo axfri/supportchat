@@ -19,6 +19,13 @@ function support_chat_db(): PDO
     $pdo = new PDO('sqlite:' . $path);
     $pdo->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
     $pdo->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+    $pdo->setAttribute(PDO::ATTR_TIMEOUT, 5);
+    $pdo->exec('PRAGMA busy_timeout = 5000');
+    $journalMode = strtolower((string)$pdo->query('PRAGMA journal_mode')->fetchColumn());
+    if ($journalMode !== 'wal') {
+        $pdo->exec('PRAGMA journal_mode = WAL');
+    }
+    $pdo->exec('PRAGMA synchronous = NORMAL');
     $pdo->exec('PRAGMA foreign_keys = ON');
     support_chat_migrate($pdo);
 

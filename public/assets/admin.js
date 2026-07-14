@@ -57,9 +57,11 @@
     let selectedId = null;
     let selectedConversation = null;
     let messageSignature = '';
+    let conversationSignature = '';
     let loadedMessages = [];
     let hasMoreMessagesBefore = false;
     let loadingOlderMessages = false;
+    let loadingMessages = false;
     let lastUnreadTotal = 0;
     let sending = false;
     let loadingConversations = false;
@@ -226,10 +228,10 @@
         return `<a class="telegram-handle" href="https://t.me/${escapeHtml(username)}" target="_blank" rel="noopener noreferrer">${escapeHtml(handle)}</a>`;
     }
 
-    function currentQuery() {
+    function currentQuery(offset = conversationOffset) {
         const params = new URLSearchParams();
         params.set('limit', '30');
-        params.set('offset', String(conversationOffset));
+        params.set('offset', String(offset));
         const search = searchInput.value.trim();
         if (search) params.set('search', search);
         if (statusFilter.value) params.set('status', statusFilter.value);
@@ -524,7 +526,31 @@
         document.body.classList.remove('confirm-open');
     }
 
-    function renderConversations() {
+    function renderConversations(force = false) {
+        const signature = JSON.stringify([
+            isAuthorized,
+            selectedId,
+            conversations.map((item) => [
+                item.id,
+                item.visitor_name,
+                item.visitor_handle,
+                item.visitor_avatar_url,
+                item.last_message,
+                item.last_message_at,
+                item.updated_at,
+                item.channel,
+                item.status,
+                item.unread_support,
+                item.language_label,
+                item.visitor_language,
+                item.browser_language,
+            ]),
+        ]);
+        if (!force && signature === conversationSignature) {
+            return;
+        }
+        conversationSignature = signature;
+
         if (!isAuthorized) {
             conversationList.innerHTML = '<div class="empty">Войдите в панель оператора</div>';
             return;
@@ -564,7 +590,7 @@
         }).join('');
     }
 
-    function setChatState(item) {
+    function setChatState(item, preserveFormInputs = false) {
         selectedConversation = item || null;
         const disabled = !item || item.status === 'closed' || sending;
 
@@ -626,16 +652,22 @@
         detailStatus.textContent = statusText(item.status);
         detailBalance.textContent = Number(item.balance || 0).toFixed(2);
         if (detailLanguage) detailLanguage.textContent = languageLabel(item) || '-';
-        balanceInput.value = Number(item.balance || 0).toFixed(2);
+        if (!preserveFormInputs) {
+            balanceInput.value = Number(item.balance || 0).toFixed(2);
+        }
         balanceInput.disabled = false;
         balanceComment.disabled = false;
         balanceSave.disabled = false;
         if (autoTranslateSupport) {
-            autoTranslateSupport.checked = Boolean(item.auto_translate_support);
+            if (!preserveFormInputs) {
+                autoTranslateSupport.checked = Boolean(item.auto_translate_support);
+            }
             autoTranslateSupport.disabled = false;
         }
         if (replyLanguage) {
-            replyLanguage.value = item.reply_language || '';
+            if (!preserveFormInputs) {
+                replyLanguage.value = item.reply_language || '';
+            }
             replyLanguage.placeholder = item.visitor_language || item.browser_language
                 ? `Авто: ${item.visitor_language || item.browser_language}`
                 : 'Авто: язык клиента';
@@ -645,8 +677,9 @@
         detailCreated.textContent = formatDate(item.created_at);
         detailUpdated.textContent = formatDate(item.updated_at);
         operatorNote.disabled = false;
-        operatorNote.value = localStorage.getItem('support_note_' + item.id) || '';
-        loadBalance();
+        if (!preserveFormInputs) {
+            operatorNote.value = localStorage.getItem('support_note_' + item.id) || '';
+        }
     }
 
     function renderBalanceHistory(items) {
@@ -659,12 +692,16 @@
         `).join('');
     }
 
-    async function loadBalance() {
+    async function loadBalance(preserveInput = false) {
         if (!selectedId) return;
+        const conversationId = selectedId;
         try {
-            const data = await api('api/balance.php?conversation_id=' + encodeURIComponent(selectedId));
+            const data = await api('api/balance.php?conversation_id=' + encodeURIComponent(conversationId));
+            if (Number(selectedId) !== Number(conversationId)) return;
             detailBalance.textContent = Number(data.balance || 0).toFixed(2);
-            balanceInput.value = Number(data.balance || 0).toFixed(2);
+            if (!preserveInput && document.activeElement !== balanceInput) {
+                balanceInput.value = Number(data.balance || 0).toFixed(2);
+            }
             renderBalanceHistory(data.history || []);
         } catch (error) {
             balanceHistory.innerHTML = '<div class="empty-inline">' + escapeHtml(error.message) + '</div>';
@@ -757,7 +794,11 @@
                 </article>
             `;
         }).join('');
-        messages.scrollTop = keepScroll ? messages.scrollHeight - previousHeight + previousTop : messages.scrollHeight;
+        if (keepScroll === 'preserve') {
+            messages.scrollTop = previousTop;
+        } else {
+            messages.scrollTop = keepScroll ? messages.scrollHeight - previousHeight + previousTop : messages.scrollHeight;
+        }
 
         messages.querySelectorAll('.delete-message-btn').forEach((button) => {
             button.addEventListener('click', async (event) => {
@@ -778,26 +819,42 @@
         const item = conversations.find((conversation) => Number(conversation.id) === Number(id));
         setChatState(item);
         renderConversations();
+        loadBalance();
         loadMessages();
     }
 
-    function loadConversations(appendPage = false) {
+    function loadConversations(appendPage = false, background = false) {
         if (!isAuthorized || loadingConversations) {
-            renderConversations();
             return Promise.resolve();
         }
 
-        if (!appendPage) {
+        if (!appendPage && !background) {
             conversationOffset = 0;
             hasMoreConversations = true;
         }
         loadingConversations = true;
         const append = appendPage && conversationOffset > 0;
-        return api('api/conversations.php' + currentQuery())
+        const requestOffset = append ? conversationOffset : 0;
+        return api('api/conversations.php' + currentQuery(requestOffset))
             .then((data) => {
-                conversations = append ? conversations.concat(data.conversations || []) : (data.conversations || []);
-                hasMoreConversations = Boolean(data.has_more);
-                conversationOffset = Number(data.next_offset || conversations.length);
+                const incoming = data.conversations || [];
+                if (append) {
+                    const existingIds = new Set(conversations.map((item) => Number(item.id)));
+                    conversations = conversations.concat(incoming.filter((item) => !existingIds.has(Number(item.id))));
+                    hasMoreConversations = Boolean(data.has_more);
+                    conversationOffset = Number(data.next_offset || conversations.length);
+                } else if (background) {
+                    const incomingIds = new Set(incoming.map((item) => Number(item.id)));
+                    conversations = incoming.concat(conversations.filter((item) => !incomingIds.has(Number(item.id))));
+                    if (conversationOffset <= incoming.length) {
+                        hasMoreConversations = Boolean(data.has_more);
+                        conversationOffset = Number(data.next_offset || incoming.length);
+                    }
+                } else {
+                    conversations = incoming;
+                    hasMoreConversations = Boolean(data.has_more);
+                    conversationOffset = Number(data.next_offset || conversations.length);
+                }
                 const unreadTotal = conversations.reduce((sum, item) => sum + Number(item.unread_support || 0), 0);
                 if (lastUnreadTotal && unreadTotal > lastUnreadTotal) {
                     playNotification();
@@ -805,7 +862,7 @@
                 lastUnreadTotal = unreadTotal;
                 updateTitle(unreadTotal);
 
-                if (selectedId && !conversations.some((item) => Number(item.id) === Number(selectedId))) {
+                if (!background && selectedId && !conversations.some((item) => Number(item.id) === Number(selectedId))) {
                     selectedId = null;
                     selectedConversation = null;
                     messageSignature = '';
@@ -817,7 +874,15 @@
                 renderConversations();
                 if (selectedId) {
                     const item = conversations.find((conversation) => Number(conversation.id) === Number(selectedId));
+                    if (background) {
+                        if (item) {
+                            selectedConversation = { ...(selectedConversation || {}), ...item };
+                            setChatState(selectedConversation, true);
+                        }
+                        return null;
+                    }
                     setChatState(item);
+                    loadBalance();
                     return loadMessages();
                 }
                 setChatState(null);
@@ -830,24 +895,34 @@
                     showAuthError('Сессия оператора истекла. Войдите снова.');
                     return;
                 }
-                conversationList.innerHTML = '<div class="empty">' + escapeHtml(error.message) + '</div>';
+                if (!background) {
+                    conversationList.innerHTML = '<div class="empty">' + escapeHtml(error.message) + '</div>';
+                }
             })
             .finally(() => {
                 loadingConversations = false;
             });
     }
 
-    function loadMessages(beforeId = 0) {
-        if (!selectedId || !isAuthorized) {
+    function loadMessages(beforeId = 0, incremental = false) {
+        if (!selectedId || !isAuthorized || loadingMessages) {
             return Promise.resolve();
         }
 
-        let url = 'api/messages.php?admin=1&conversation_id=' + encodeURIComponent(selectedId);
+        const conversationId = selectedId;
+        const lastMessageId = loadedMessages.length > 0 ? Number(loadedMessages[loadedMessages.length - 1].id || 0) : 0;
+        const useIncremental = incremental && beforeId <= 0 && lastMessageId > 0;
+        const wasNearBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight < 120;
+        loadingMessages = true;
+        let url = 'api/messages.php?admin=1&limit=30&conversation_id=' + encodeURIComponent(conversationId);
         if (beforeId > 0) {
             url += '&before_id=' + encodeURIComponent(beforeId);
+        } else if (useIncremental) {
+            url += '&after_id=' + encodeURIComponent(lastMessageId);
         }
         return api(url)
             .then((data) => {
+                if (Number(selectedId) !== Number(conversationId)) return;
                 conversations = conversations.map((item) => {
                     if (Number(item.id) === Number(selectedId)) {
                         return { ...item, unread_support: 0 };
@@ -858,20 +933,31 @@
                 updateTitle(lastUnreadTotal);
                 renderConversations();
                 if (data.conversation) {
-                    selectedConversation = data.conversation;
-                    setChatState(data.conversation);
+                    selectedConversation = { ...(selectedConversation || {}), ...data.conversation };
+                    setChatState(selectedConversation, useIncremental || beforeId > 0);
                 }
-                hasMoreMessagesBefore = Boolean(data.has_more_before);
                 if (beforeId > 0) {
-                    loadedMessages = (data.messages || []).concat(loadedMessages);
+                    const existingIds = new Set(loadedMessages.map((item) => Number(item.id)));
+                    loadedMessages = (data.messages || []).filter((item) => !existingIds.has(Number(item.id))).concat(loadedMessages);
+                    hasMoreMessagesBefore = Boolean(data.has_more_before);
                     renderMessages(loadedMessages, true);
+                } else if (useIncremental) {
+                    const existingIds = new Set(loadedMessages.map((item) => Number(item.id)));
+                    loadedMessages = loadedMessages.concat((data.messages || []).filter((item) => !existingIds.has(Number(item.id))));
+                    renderMessages(loadedMessages, wasNearBottom ? false : 'preserve');
                 } else {
                     loadedMessages = data.messages || [];
+                    hasMoreMessagesBefore = Boolean(data.has_more_before);
                     renderMessages(loadedMessages);
                 }
             })
             .catch((error) => {
-                messages.innerHTML = '<div class="empty">' + escapeHtml(error.message) + '</div>';
+                if (!incremental && beforeId <= 0 && loadedMessages.length === 0) {
+                    messages.innerHTML = '<div class="empty">' + escapeHtml(error.message) + '</div>';
+                }
+            })
+            .finally(() => {
+                loadingMessages = false;
             });
     }
 
@@ -1019,7 +1105,7 @@
             });
             balanceComment.value = '';
             await loadBalance();
-            await loadConversations();
+            await loadConversations(false, true);
         } catch (error) {
             showError(error.message || 'Не удалось изменить баланс');
         }
@@ -1173,7 +1259,7 @@
             autosize();
             messageSignature = '';
             await loadMessages();
-            await loadConversations();
+            await loadConversations(false, true);
         } catch (error) {
             showError(error.message || 'Не удалось отправить сообщение');
         } finally {
@@ -1182,8 +1268,38 @@
         }
     });
 
-    setInterval(loadConversations, 5000);
-    setInterval(loadMessages, 2500);
+    let messagePollTimer = null;
+    let conversationPollTimer = null;
+
+    function scheduleMessagePoll() {
+        window.clearTimeout(messagePollTimer);
+        messagePollTimer = window.setTimeout(async () => {
+            if (isAuthorized && !document.hidden) {
+                await loadMessages(0, true);
+            }
+            scheduleMessagePoll();
+        }, 4000);
+    }
+
+    function scheduleConversationPoll() {
+        window.clearTimeout(conversationPollTimer);
+        conversationPollTimer = window.setTimeout(async () => {
+            if (isAuthorized && !document.hidden) {
+                await loadConversations(false, true);
+            }
+            scheduleConversationPoll();
+        }, 12000);
+    }
+
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden && isAuthorized) {
+            loadMessages(0, true);
+            loadConversations(false, true);
+        }
+    });
+
+    scheduleMessagePoll();
+    scheduleConversationPoll();
     api('api/admin_login.php')
         .then((data) => {
             currentRole = data.role || '';

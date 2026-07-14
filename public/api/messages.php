@@ -329,17 +329,19 @@ if ($method === 'GET') {
             $messages = array_values(array_filter($messages, static fn($message) => $message !== null));
         }
 
+        $conversation = support_chat_get_conversation($pdo, $conversationId);
         try {
-            if ($isAdmin) {
-                $pdo->prepare('UPDATE conversations SET unread_support = 0 WHERE id = ?')->execute([$conversationId]);
-            } else {
-                $pdo->prepare('UPDATE conversations SET unread_visitor = 0 WHERE id = ?')->execute([$conversationId]);
+            if ($isAdmin && (int)($conversation['unread_support'] ?? 0) > 0) {
+                $pdo->prepare('UPDATE conversations SET unread_support = 0 WHERE id = ? AND unread_support > 0')->execute([$conversationId]);
+                $conversation['unread_support'] = 0;
+            } elseif (!$isAdmin && (int)($conversation['unread_visitor'] ?? 0) > 0) {
+                $pdo->prepare('UPDATE conversations SET unread_visitor = 0 WHERE id = ? AND unread_visitor > 0')->execute([$conversationId]);
+                $conversation['unread_visitor'] = 0;
             }
         } catch (Throwable $e) {
             support_chat_log_error('Failed to update unread flags: ' . $e->getMessage());
         }
 
-        $conversation = support_chat_get_conversation($pdo, $conversationId);
         if ($isAdmin && is_array($conversation)) {
             $conversation = support_chat_admin_conversation_payload($conversation);
         }

@@ -151,6 +151,6 @@ if (!support_chat_is_admin_authenticated()) {
             </div>
         </aside>
     </main>
-    <script src="assets/admin.js?v=20260702-support-audit"></script>
+    <script src="assets/admin.js?v=20260714-live-refresh"></script>
 </body>
 </html>
