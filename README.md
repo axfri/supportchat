@@ -1,80 +1,83 @@
 # supportchat
 
-PHP support system with a web chat interface, operator panel and Telegram integration.
+PHP-система поддержки с веб-чатом, панелью операторов и интеграцией с Telegram.
 
-The project connects website visitors and Telegram users with support staff through a shared conversation workspace. It is designed as a lightweight self-hosted application for customer support workflows.
+Проект объединяет обращения посетителей сайта и пользователей Telegram в общем рабочем пространстве операторов поддержки. Приложение рассчитано на самостоятельное размещение и лёгкую интеграцию с существующим сайтом.
 
-## Features
+## Возможности
 
-- web support widget and operator chat interface;
-- conversations from website and Telegram channels;
-- admin and manager roles;
-- login, session-based authentication and staff management;
-- conversation statuses: new, open and closed;
-- unread counters and conversation filters;
-- text messages and file attachments;
-- Telegram webhook and long-polling modes;
-- Telegram send/delete operations and delivery logs;
-- optional translation workflow;
-- user balance and balance history;
-- SQLite persistence with automatic schema migrations;
-- JSON APIs used by the web interface;
-- UTF-8 JSON and HTML responses.
+- виджет поддержки для сайта;
+- панель оператора;
+- обращения из веб-чата и Telegram;
+- роли администратора и менеджера;
+- авторизация и управление сотрудниками;
+- статусы диалогов: новый, открыт и закрыт;
+- поиск, фильтрация и счётчики непрочитанных сообщений;
+- текстовые сообщения и вложения;
+- Telegram webhook и long polling;
+- отправка и удаление сообщений в Telegram;
+- журналирование Telegram-операций;
+- опциональный перевод сообщений;
+- баланс пользователя и история изменения баланса;
+- SQLite с автоматическим созданием и обновлением схемы;
+- JSON API для веб-интерфейса;
+- ответы HTML и JSON в UTF-8.
 
-## Stack
+## Стек
 
 - PHP 8.1+;
 - PDO SQLite;
-- PHP sessions and password hashing;
-- vanilla JavaScript, HTML and CSS;
-- Node.js 18+ for the local development server;
+- PHP Sessions;
+- password hashing;
+- JavaScript, HTML и CSS без frontend-фреймворка;
+- Node.js 18+ для локального сервера разработки;
 - Telegram Bot API;
-- optional Google Translate or LibreTranslate integration.
+- опционально Google Translate или LibreTranslate.
 
-There is no framework dependency. The PHP application uses small focused modules under `src/` and public entry points under `public/`.
+Проект не использует PHP-фреймворк. Общая логика находится в `src/`, а публичные точки входа — в `public/`.
 
-## Runtime modes
+## Варианты запуска
 
-### PHP web runtime
+### PHP-сервер
 
-The production-style runtime uses PHP through Apache, Nginx with PHP-FPM or another PHP-capable web server.
+Основной вариант запуска использует Apache, Nginx с PHP-FPM или другой web-сервер, поддерживающий PHP.
 
-Set the web document root to:
+Document root должен указывать на:
 
 ```text
 public/
 ```
 
-The PHP entry points load the shared code from `src/` and create/update the SQLite schema automatically on first access.
+PHP-точки входа подключают общий код из `src/` и автоматически создают или обновляют SQLite-схему при первом обращении.
 
-### Node.js local server
+### Локальный Node.js-сервер
 
-The repository also contains a standalone Node.js development server:
+В репозитории есть отдельный Node.js-сервер для локальной разработки:
 
 ```bash
 npm install
 npm start
 ```
 
-It listens on port `8080` by default. Telegram polling can be enabled with:
+По умолчанию сервер запускается на порту `8080`. Telegram polling можно включить командой:
 
 ```bash
 npm run start:telegram
 ```
 
-The Node server stores local development data in `storage/local-data.json`. It is intended for local development and should not be exposed directly to the public internet without an additional security review.
+Node-сервер хранит локальные данные в `storage/local-data.json`. Он предназначен для разработки и не должен напрямую публиковаться в интернете без отдельного security review.
 
-## PHP local setup
+## Локальный запуск PHP-версии
 
-Requirements:
+Требования:
 
-- PHP 8.1 or newer;
-- PDO SQLite extension;
-- a web server capable of executing PHP;
-- write access to `storage/`;
-- Node.js 18+ only if the local server is needed.
+- PHP 8.1 или новее;
+- расширение PDO SQLite;
+- web-сервер с поддержкой PHP;
+- права записи для каталога `storage/`;
+- Node.js 18+ только при необходимости локального Node-сервера.
 
-Create the environment file.
+Создать файл окружения.
 
 Linux/macOS:
 
@@ -88,34 +91,38 @@ Windows PowerShell:
 Copy-Item .env.example .env
 ```
 
-Start a local PHP server from the repository root:
+Запустить встроенный PHP-сервер из корня проекта:
 
 ```bash
 php -S 127.0.0.1:8081 -t public
 ```
 
-Then open:
+Открыть:
 
 ```text
 http://127.0.0.1:8081/login.php
 ```
 
-The PHP runtime creates the SQLite database at the path configured by `SQLITE_PATH`. The default is `storage/support.sqlite`.
+SQLite-база будет создана по пути из `SQLITE_PATH`. Значение по умолчанию:
 
-## Configuration
+```text
+storage/support.sqlite
+```
 
-The main variables are documented in [`.env.example`](.env.example):
+## Конфигурация
+
+Основные переменные находятся в [`.env.example`](.env.example):
 
 ```env
 APP_URL=https://example.com
 SQLITE_PATH=storage/support.sqlite
-SUPPORT_ADMIN_TOKEN=replace-with-a-long-random-secret
-TELEGRAM_BOT_TOKEN=replace-with-a-bot-token
-TELEGRAM_WEBHOOK_SECRET=replace-with-a-random-webhook-secret
+SUPPORT_ADMIN_TOKEN=замените-на-длинный-случайный-секрет
+TELEGRAM_BOT_TOKEN=токен-telegram-бота
+TELEGRAM_WEBHOOK_SECRET=случайный-секрет-webhook
 TELEGRAM_POLLING=0
 ```
 
-Additional optional variables used by the PHP application include:
+Дополнительные переменные PHP-версии:
 
 - `SUPPORT_ADMIN_LOGIN`;
 - `SUPPORT_ADMIN_PASSWORD`;
@@ -124,46 +131,48 @@ Additional optional variables used by the PHP application include:
 - `LIBRETRANSLATE_API_KEY`;
 - `TRANSLATION_API_KEY`.
 
-Do not commit `.env`, SQLite databases, uploaded files, logs, Telegram offsets or API keys.
+Файл `.env`, токены Telegram, ключи переводчиков, базы, логи и загруженные файлы нельзя добавлять в Git.
 
 ## Telegram webhook
 
-The webhook entry point is:
+Точка входа webhook:
 
 ```text
 /public/telegram-webhook.php
 ```
 
-Configure Telegram to send updates to the public HTTPS URL and set the same value as `TELEGRAM_WEBHOOK_SECRET`. The endpoint validates Telegram's secret header before processing updates.
+Telegram должен отправлять обновления на публичный HTTPS-адрес. Значение `TELEGRAM_WEBHOOK_SECRET` должно совпадать с настроенным секретом webhook. Endpoint проверяет секретный заголовок Telegram перед обработкой обновления.
 
-For local-only development, use polling instead:
+Для локальной разработки можно использовать polling:
 
 ```bash
 npm run start:telegram
 ```
 
-Do not run webhook and polling against the same bot at the same time.
+Одновременно запускать webhook и polling для одного бота не следует.
 
-## API areas
+## API
 
-The PHP API entry points are located in `public/api/`:
+PHP API-точки находятся в `public/api/`:
 
-- `admin_login.php` and `admin_logout.php` — staff authentication;
-- `conversations.php` — conversation list and status operations;
-- `messages.php` — read, send, delete and attachment operations;
-- `unread.php` — unread counters;
-- `staff.php` — staff management;
-- `admin_users.php` — administrator user operations;
-- `telegram_logs.php` — Telegram delivery logs;
-- `balance.php` — balance and balance history;
-- `download.php` — attachment downloads;
-- `avatar.php` — visitor avatar handling.
+- `admin_login.php` и `admin_logout.php` — авторизация сотрудников;
+- `conversations.php` — список диалогов и изменение статусов;
+- `messages.php` — чтение, отправка, удаление сообщений и работа с вложениями;
+- `unread.php` — счётчики непрочитанных сообщений;
+- `staff.php` — управление сотрудниками;
+- `admin_users.php` — административные операции;
+- `telegram_logs.php` — журнал Telegram-операций;
+- `balance.php` — баланс и история изменений;
+- `download.php` — скачивание вложений;
+- `avatar.php` — работа с аватарами посетителей.
 
-The browser UI uses JSON responses with UTF-8 content types. Authentication requirements depend on whether the request is made for a visitor session or an authenticated support staff member.
+Веб-интерфейс получает JSON-ответы с UTF-8 content type. Требования к авторизации зависят от типа запроса: visitor session или авторизованный сотрудник поддержки.
 
-## Storage and database
+## Хранилище и база данных
 
-The PHP application uses SQLite and performs migrations in `src/database.php`. Main tables include:
+PHP-версия использует SQLite. Миграции находятся в `src/database.php`.
+
+Основные таблицы:
 
 - `conversations`;
 - `messages`;
@@ -172,40 +181,38 @@ The PHP application uses SQLite and performs migrations in `src/database.php`. M
 - `telegram_logs`;
 - `balance_history`.
 
-SQLite is configured with foreign keys, WAL mode, a busy timeout and indexes for conversations, messages, attachments and Telegram logs.
+SQLite настроен с foreign keys, WAL mode, busy timeout и индексами для диалогов, сообщений, вложений и Telegram-логов.
 
-The `storage/` directory must be writable by the PHP process. It is ignored by Git except for `storage/.gitkeep`.
+Каталог `storage/` должен быть доступен для записи PHP-процессу. Содержимое каталога игнорируется Git, кроме `storage/.gitkeep`.
 
-## Security checklist
+## Чек-лист безопасности
 
-Before deployment:
+Перед deployment:
 
-1. Set a long random `SUPPORT_ADMIN_TOKEN`.
-2. Set a unique `TELEGRAM_WEBHOOK_SECRET`.
-3. Create staff accounts with strong passwords.
-4. Serve the application over HTTPS.
-5. Keep `storage/` outside the public document root where possible.
-6. Ensure uploaded files cannot be executed as PHP.
-7. Restrict database and log file permissions.
-8. Configure a real process supervisor for the required runtime.
-9. Review upload limits and allowed file types.
-10. Disable or replace development fallbacks before production use.
+1. Установить длинный случайный `SUPPORT_ADMIN_TOKEN`.
+2. Установить отдельный случайный `TELEGRAM_WEBHOOK_SECRET`.
+3. Создать сотрудников с сильными паролями.
+4. Использовать HTTPS.
+5. По возможности вынести `storage/` за пределы public document root.
+6. Запретить выполнение PHP-файлов среди загруженных вложений.
+7. Ограничить права на базу и логи.
+8. Настроить supervisor или другой process manager.
+9. Проверить ограничения размера и типы загружаемых файлов.
+10. Убрать development fallback перед production-запуском.
 
-The local Node server currently has development-oriented behavior, including a fallback admin token when no token is configured. Do not expose it publicly without changing that behavior and reviewing the deployment configuration.
+В локальном Node-сервере есть development-поведение: при отсутствии токена используется fallback-значение. Не публикуйте его в интернете без изменения этой логики и проверки конфигурации.
 
-## Current limitations
+## Текущие ограничения
 
-- no Docker or docker-compose configuration;
-- no automated test suite;
-- no CI/CD workflow;
-- no generated OpenAPI/Swagger specification;
-- SQLite schema migrations are embedded in application startup;
-- translation providers are optional integrations;
-- the Node.js server and PHP runtime use different local storage implementations.
+- Docker и docker-compose пока отсутствуют;
+- автоматические тесты пока отсутствуют;
+- CI/CD workflow пока отсутствует;
+- Swagger/OpenAPI-описание пока не сгенерировано;
+- SQLite-миграции встроены в запуск приложения;
+- сервисы перевода являются опциональными;
+- Node.js и PHP-режим используют разные локальные хранилища.
 
-These are known limitations of the current lightweight implementation.
+## Лицензия
 
-## License
-
-No license is currently declared. Add an explicit license before distributing the project as reusable software.
+Лицензия пока не указана. Перед распространением проекта как reusable software следует добавить явную лицензию.
 
